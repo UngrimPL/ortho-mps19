@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Ortofotomapa – auto-fix tiles</title>
+  <title>Ortofotomapa – GitHub Pages</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <style>
@@ -13,97 +13,118 @@
     }
     .toast {
       position:absolute; top:12px; right:12px; background:rgba(0,0,0,.75); color:#fff;
-      padding:8px 12px; border-radius:8px; font:13px/16px Arial; max-width: 320px;
+      padding:8px 12px; border-radius:8px; font:13px/16px Arial; max-width:360px;
     }
   </style>
 </head>
 <body>
 <div id="map"></div>
 <div class="legend">
-  <b>Ortofotomapa</b><br/>Auto-wykrywanie: JPG/PNG i TMS/XYZ
+  <b>Ortofotomapa</b><br/>Auto-detekcja: poziomów i formatu kafelków
 </div>
 <div id="toast" class="toast" style="display:none"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet-hash"></script>
 <script>
-  const map = L.map('map').setView([52.0032, 19.2011], 15);
-  new L.Hash(map);
-  L.control.scale({ metric:true, imperial:false }).addTo(map);
-
+(async function(){
   const toast = (msg) => {
     const el = document.getElementById('toast');
     el.textContent = msg;
     el.style.display = 'block';
-    setTimeout(() => el.style.display = 'none', 5000);
+    setTimeout(() => el.style.display = 'none', 6000);
   };
 
-  // Spróbuj dopasować z metadata.json (Agisoft zwykle go dodaje)
-  fetch('./tiles/metadata.json').then(r => r.ok ? r.json() : null).then(meta => {
-    if (meta && meta.bounds) {
-      const [xmin, ymin, xmax, ymax] = meta.bounds;
-      map.fitBounds([[ymin, xmin], [ymax, xmax]], { padding:[30,30] });
-    }
-  }).catch(()=>{});
+  // Domyślny środek — podmień, jeśli chcesz
+  let center = L.latLng(52.0032, 19.2011);
 
-  // Kombinacje do sprawdzenia
-  const combos = [
-    { ext: 'jpg', tms: true  },
-    { ext: 'jpg', tms: false },
-    { ext: 'png', tms: true  },
-    { ext: 'png', tms: false },
-  ];
-
-  let activeLayer = null;
-  let tried = 0;
-  let success = false;
-
-  function tryNext() {
-    if (success || tried >= combos.length) {
-      if (!success) {
-        toast('Nie udało się załadować kafelków. Sprawdź: czy folder to dokładnie /tiles/, rozszerzenie (.jpg/.png), oraz czy zakres zoomów obejmuje 15–22.');
+  // Spróbuj wczytać metadata.json (Agisoft zwykle go dodaje)
+  try {
+    const r = await fetch('./tiles/metadata.json');
+    if (r.ok) {
+      const meta = await r.json();
+      if (meta && meta.bounds) {
+        const [xmin, ymin, xmax, ymax] = meta.bounds;
+        center = L.latLng((ymin + ymax)/2, (xmin + xmax)/2);
       }
-      return;
     }
-    const { ext, tms } = combos[tried++];
-    const candidate = L.tileLayer(`./tiles/{z}/{x}/{y}.${ext}`, {
-      tms, minZoom: 0, maxZoom: 22,
-      errorTileUrl: `data:image/svg+xml,` + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='256' height='256'><rect width='100%' height='100%' fill='%23ddd'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='20' fill='%23999'>brak</text></svg>`),
-      attribution: '&copy; orto (Agisoft)'
-    });
+  } catch(e){}
 
-    let loadedOnce = false;
-    const onLoad = () => {
-      if (loadedOnce) return;
-      loadedOnce = true;
-      success = true;
-      if (activeLayer) map.removeLayer(activeLayer);
-      activeLayer = candidate;
-      toast(`Załadowano: tiles/*.${ext} — TMS: ${tms ? 'TAK' : 'NIE'}`);
-      // Posprzątaj nasłuchy z innych kandydatów
-      candidate.off('tileload', onLoad);
-      // usuń ew. kolejne próby
-    };
-    const onError = () => {
-      // jeżeli żaden kafelek się nie załadował po krótkiej chwili, próbujemy następny
-      if (!loadedOnce) {
-        setTimeout(() => {
-          if (!loadedOnce && !success) {
-            candidate.off('tileload', onLoad);
-            candidate.off('tileerror', onError);
-            map.removeLayer(candidate);
-            tryNext();
-          }
-        }, 400);
-      }
-    };
+  // Inicjalizacja mapy (zoom ustawimy po detekcji)
+  const map = L.map('map', { zoomControl: true });
+  new L.Hash(map);
+  L.control.scale({ metric:true, imperial:false }).addTo(map);
 
-    candidate.on('tileload', onLoad);
-    candidate.on('tileerror', onError);
-    candidate.addTo(map);
+  // TMS = true (Agisoft TMS)
+  const TMS = true;
+  const TILE = 256;
+
+  // Pobierz zoom z URL, jeśli jest (#z/lat/lon)
+  const hashZoomMatch = location.hash.match(/#(\d+)/);
+  const urlZoom = hashZoomMatch ? parseInt(hashZoomMatch[1], 10) : null;
+
+  // Funkcja obliczająca indeks kafla dla lat/lng/zoom
+  function xyzForLatLng(latlng, z) {
+    // WebMercator projekcja w Leaflet
+    const projected = map.options.crs.project(latlng); // punkt w metrach
+    const scale = 256 * Math.pow(2, z) / (2 * Math.PI * 6378137);
+    const x = Math.floor((projected.x + Math.PI * 6378137) * scale);
+    const yMerc = (projected.y + Math.PI * 6378137) * scale; // w "XYZ"
+    let y = Math.floor(yMerc);
+    if (TMS) {
+      const maxIndex = Math.pow(2, z) - 1;
+      y = maxIndex - y; // konwersja XYZ -> TMS
+    }
+    return { x, y };
   }
 
-  tryNext();
+  // Sprawdź, czy istnieje kafelek dla danego z/ext
+  async function testTile(z, ext) {
+    const { x, y } = xyzForLatLng(center, z);
+    const url = `./tiles/${z}/${x}/${y}.${ext}`;
+    try {
+      const resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+      return resp.ok;
+    } catch(e){
+      return false;
+    }
+  }
+
+  // Znajdź najniższy dostępny zoom i rozszerzenie (jpg -> png)
+  async function detect() {
+    const exts = ['jpg', 'png'];
+    for (const ext of exts) {
+      for (let z = 15; z <= 22; z++) {
+        const ok = await testTile(z, ext);
+        if (ok) return { minZoom: z, ext };
+      }
+    }
+    return null;
+  }
+
+  const detected = await detect();
+  if (!detected) {
+    map.setView(center, urlZoom || 17);
+    toast('Nie znaleziono kafelków. Sprawdź, czy folder to dokładnie /tiles/ oraz czy nazwy mają .jpg lub .png dla poziomów 15–22.');
+    return;
+  }
+
+  const { minZoom, ext } = detected;
+
+  // Jeśli w URL był mniejszy zoom niż dostępny — podbijemy
+  const startZoom = Math.max(minZoom, urlZoom || minZoom);
+
+  // Dodaj warstwę tileLayer
+  const layer = L.tileLayer(`./tiles/{z}/{x}/{y}.${ext}`, {
+    tms: TMS,
+    minZoom: minZoom,
+    maxZoom: 22,
+    attribution: '&copy; Orto (Agisoft Metashape)'
+  }).addTo(map);
+
+  map.setView(center, startZoom);
+  toast(`Wykryto: format .${ext}, minZoom ${minZoom}, TMS: TAK`);
+})();
 </script>
 </body>
 </html>
