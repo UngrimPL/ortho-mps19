@@ -2,75 +2,108 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Ortofotomapa – podgląd online</title>
+  <title>Ortofotomapa – auto-fix tiles</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-      background: #e0e0e0;
-    }
+    html, body, #map { height: 100%; margin: 0; background:#eaeaea; }
     .legend {
-      position: absolute;
-      bottom: 15px;
-      left: 15px;
-      background: rgba(255,255,255,0.9);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font: 13px/16px Arial, sans-serif;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      position:absolute; bottom:12px; left:12px; background:rgba(255,255,255,.92);
+      padding:8px 12px; border-radius:8px; font:13px/16px Arial; box-shadow:0 2px 8px rgba(0,0,0,.2);
+    }
+    .toast {
+      position:absolute; top:12px; right:12px; background:rgba(0,0,0,.75); color:#fff;
+      padding:8px 12px; border-radius:8px; font:13px/16px Arial; max-width: 320px;
     }
   </style>
 </head>
 <body>
 <div id="map"></div>
 <div class="legend">
-  <b>Ortofotomapa (TMS, JPG)</b><br/>
-  Zoom: 15–22
+  <b>Ortofotomapa</b><br/>Auto-wykrywanie: JPG/PNG i TMS/XYZ
 </div>
+<div id="toast" class="toast" style="display:none"></div>
 
-<script
-  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-  crossorigin="">
-</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet-hash"></script>
-
 <script>
-  // 🔹 1. Tworzymy mapę i ustawiamy startowy widok
-  // Możesz podać dowolne współrzędne (lat, lon) – np. środek Twojej ortofotomapy
-  const map = L.map('map', { zoomControl: true }).setView([52.0, 19.2], 17);
-  const hash = new L.Hash(map); // zapisuje pozycję mapy w adresie URL
+  const map = L.map('map').setView([52.0032, 19.2011], 15);
+  new L.Hash(map);
+  L.control.scale({ metric:true, imperial:false }).addTo(map);
 
-  // 🔹 2. Warstwa ortofotomapy z lokalnych kafelków JPG
-  const ortho = L.tileLayer('./tiles/{z}/{x}/{y}.jpg', {
-    tms: true,          // Agisoft generuje w standardzie TMS (odwrócone Y)
-    minZoom: 15,
-    maxZoom: 22,
-    attribution: '&copy; Twoja ortofotomapa – dane z Agisoft Metashape'
-  }).addTo(map);
+  const toast = (msg) => {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 5000);
+  };
 
-  // 🔹 3. Skala w metrach
-  L.control.scale({ metric: true, imperial: false }).addTo(map);
+  // Spróbuj dopasować z metadata.json (Agisoft zwykle go dodaje)
+  fetch('./tiles/metadata.json').then(r => r.ok ? r.json() : null).then(meta => {
+    if (meta && meta.bounds) {
+      const [xmin, ymin, xmax, ymax] = meta.bounds;
+      map.fitBounds([[ymin, xmin], [ymax, xmax]], { padding:[30,30] });
+    }
+  }).catch(()=>{});
 
-  // 🔹 4. Spróbuj dopasować widok do kafelków (jeśli masz metadata.json)
-  fetch('./tiles/metadata.json')
-    .then(r => r.json())
-    .then(meta => {
-      if (meta.bounds) {
-        const b = meta.bounds; // [xmin, ymin, xmax, ymax]
-        const sw = L.latLng(b[1], b[0]);
-        const ne = L.latLng(b[3], b[2]);
-        map.fitBounds(L.latLngBounds(sw, ne));
+  // Kombinacje do sprawdzenia
+  const combos = [
+    { ext: 'jpg', tms: true  },
+    { ext: 'jpg', tms: false },
+    { ext: 'png', tms: true  },
+    { ext: 'png', tms: false },
+  ];
+
+  let activeLayer = null;
+  let tried = 0;
+  let success = false;
+
+  function tryNext() {
+    if (success || tried >= combos.length) {
+      if (!success) {
+        toast('Nie udało się załadować kafelków. Sprawdź: czy folder to dokładnie /tiles/, rozszerzenie (.jpg/.png), oraz czy zakres zoomów obejmuje 15–22.');
       }
-    })
-    .catch(() => console.log('Brak metadata.json – używam widoku domyślnego.'));
+      return;
+    }
+    const { ext, tms } = combos[tried++];
+    const candidate = L.tileLayer(`./tiles/{z}/{x}/{y}.${ext}`, {
+      tms, minZoom: 0, maxZoom: 22,
+      errorTileUrl: `data:image/svg+xml,` + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='256' height='256'><rect width='100%' height='100%' fill='%23ddd'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='20' fill='%23999'>brak</text></svg>`),
+      attribution: '&copy; orto (Agisoft)'
+    });
+
+    let loadedOnce = false;
+    const onLoad = () => {
+      if (loadedOnce) return;
+      loadedOnce = true;
+      success = true;
+      if (activeLayer) map.removeLayer(activeLayer);
+      activeLayer = candidate;
+      toast(`Załadowano: tiles/*.${ext} — TMS: ${tms ? 'TAK' : 'NIE'}`);
+      // Posprzątaj nasłuchy z innych kandydatów
+      candidate.off('tileload', onLoad);
+      // usuń ew. kolejne próby
+    };
+    const onError = () => {
+      // jeżeli żaden kafelek się nie załadował po krótkiej chwili, próbujemy następny
+      if (!loadedOnce) {
+        setTimeout(() => {
+          if (!loadedOnce && !success) {
+            candidate.off('tileload', onLoad);
+            candidate.off('tileerror', onError);
+            map.removeLayer(candidate);
+            tryNext();
+          }
+        }, 400);
+      }
+    };
+
+    candidate.on('tileload', onLoad);
+    candidate.on('tileerror', onError);
+    candidate.addTo(map);
+  }
+
+  tryNext();
 </script>
 </body>
 </html>
