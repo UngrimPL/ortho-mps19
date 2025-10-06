@@ -6,30 +6,48 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <style>
-    html, body, #map { height: 100%; margin: 0; background:#eaeaea; }
+    html, body, #map { height:100%; margin:0; background:#eaeaea; }
   </style>
 </head>
 <body>
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script src="https://unpkg.com/leaflet-hash"></script>
 
 <script>
-  // ✅ Domyślny środek Polski, możesz zmienić po sprawdzeniu gdzie się pojawia
-  const map = L.map('map').setView([52.0, 19.2], 16);
-  new L.Hash(map);
+  // ---- USTAW tu swój "znany" kafel (masz go w repo: tiles/16/36907/43912.jpg)
+  const KNOWN = { z:16, x:36907, y_tms:43912 };
 
-  // ✅ Twoje kafelki JPG z Agisoft (TMS struktura)
-  const ortho = L.tileLayer('./tiles/{z}/{x}/{y}.jpg', {
-    tms: true,          // ← najważniejsze! Agisoft używa TMS
+  // Konwersja: TMS (origin bottom-left) -> XYZ (origin top-left)
+  function tmsToXyzY(y_tms, z) {
+    const max = Math.pow(2, z) - 1;
+    return max - y_tms;
+  }
+
+  // Środek kafla XYZ -> lat/lon (Web Mercator)
+  function latLngFromTileXYZ(x, y_xyz, z){
+    const n = Math.pow(2, z);
+    const lon = (x + 0.5) / n * 360 - 180;
+    const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y_xyz + 0.5) / n)));
+    const lat = latRad * 180 / Math.PI;
+    return [lat, lon];
+  }
+
+  const y_xyz = tmsToXyzY(KNOWN.y_tms, KNOWN.z);
+  const center = latLngFromTileXYZ(KNOWN.x, y_xyz, KNOWN.z);
+
+  // Mapa
+  const map = L.map('map', { zoomControl:true }).setView(center, KNOWN.z);
+
+  // Warstwa orto z Agisoft (TMS, JPG)
+  L.tileLayer('./tiles/{z}/{x}/{y}.jpg', {
+    tms: true,          // Agisoft eksportuje TMS
     minZoom: 15,
-    maxZoom: 19,
-    attribution: '&copy; Ortofotomapa (Agisoft Metashape)'
+    maxZoom: 22,
+    attribution: '&copy; Orto (Agisoft Metashape)'
   }).addTo(map);
 
-  // ✅ Skala
-  L.control.scale({ metric: true, imperial: false }).addTo(map);
+  L.control.scale({ metric:true, imperial:false }).addTo(map);
 </script>
 </body>
 </html>
