@@ -2,52 +2,81 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Ortofotomapa – Agisoft TMS</title>
+  <title>Ortofotomapa – PMTiles</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <!-- MapLibre GL -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <!-- PMTiles protocol -->
+  <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
   <style>
     html, body, #map { height:100%; margin:0; background:#eaeaea; }
+    .toast { position:absolute; top:12px; right:12px; background:rgba(0,0,0,.8); color:#fff;
+             padding:8px 12px; border-radius:8px; font:13px/16px system-ui,Arial; }
   </style>
 </head>
 <body>
 <div id="map"></div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<div id="toast" class="toast" style="display:none"></div>
 
 <script>
-  // ---- USTAW tu swój "znany" kafel (masz go w repo: tiles/16/36907/43912.jpg)
-  const KNOWN = { z:16, x:36907, y_tms:43912 };
+  // Helper – krótki komunikat
+  const toast = (msg, ms=5000) => {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.style.display = 'block';
+    setTimeout(()=> el.style.display='none', ms);
+  };
 
-  // Konwersja: TMS (origin bottom-left) -> XYZ (origin top-left)
-  function tmsToXyzY(y_tms, z) {
-    const max = Math.pow(2, z) - 1;
-    return max - y_tms;
-  }
+  // Rejestrujemy protokół "pmtiles://"
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
 
-  // Środek kafla XYZ -> lat/lon (Web Mercator)
-  function latLngFromTileXYZ(x, y_xyz, z){
-    const n = Math.pow(2, z);
-    const lon = (x + 0.5) / n * 360 - 180;
-    const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y_xyz + 0.5) / n)));
-    const lat = latRad * 180 / Math.PI;
-    return [lat, lon];
-  }
+  const PMTILES_URL = "./ortho.pmtiles";  // <-- ten plik wrzuć obok index.html
+  const p = new pmtiles.PMTiles(PMTILES_URL);
+  protocol.add(p); // podłącz do protokołu (prefetch nagłówków itd.)
 
-  const y_xyz = tmsToXyzY(KNOWN.y_tms, KNOWN.z);
-  const center = latLngFromTileXYZ(KNOWN.x, y_xyz, KNOWN.z);
+  // Minimalny styl MapLibre (pusty, dodamy źródło + warstwę po init)
+  const map = new maplibregl.Map({
+    container: "map",
+    style: { version: 8, sources: {}, layers: [] },
+    center: [19.2, 52.0],  // tymczasowy środek; za chwilę fitBounds z nagłówka
+    zoom: 16,
+    attributionControl: true
+  });
 
-  // Mapa
-  const map = L.map('map', { zoomControl:true }).setView(center, KNOWN.z);
+  map.addControl(new maplibregl.NavigationControl(), "top-left");
+  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }));
 
-  // Warstwa orto z Agisoft (TMS, JPG)
-  L.tileLayer('./tiles/{z}/{x}/{y}.jpg', {
-    tms: true,          // Agisoft eksportuje TMS
-    minZoom: 15,
-    maxZoom: 22,
-    attribution: '&copy; Orto (Agisoft Metashape)'
-  }).addTo(map);
+  map.on("load", async () => {
+    try {
+      const header = await p.getHeader();
+      // header.bounds = [w, s, e, n]
+      if (header && header.bounds) {
+        const [w, s, e, n] = header.bounds;
+        map.fitBounds([[w, s], [e, n]], { padding: 20, linear: true });
+      }
 
-  L.control.scale({ metric:true, imperial:false }).addTo(map);
+      // Dodaj źródło raster z pliku PMTiles
+      map.addSource("ortho", {
+        type: "raster",
+        tiles: [`pmtiles://${PMTILES_URL}/{z}/{x}/{y}`],
+        tileSize: 256,
+        minzoom: 0,           // MapLibre może sam ograniczyć wg header.minZoom
+        maxzoom: 24
+      });
+
+      map.addLayer({
+        id: "ortho",
+        type: "raster",
+        source: "ortho"
+      });
+
+      toast("Załadowano PMTiles ✅");
+    } catch (e) {
+      console.error(e);
+      toast("Błąd wczytywania PMTiles. Sprawdź ścieżkę do ortho.pmtiles.");
+    }
+  });
 </script>
 </body>
 </html>
