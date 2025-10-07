@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Orto s19 v2</title>
+  <title>Orto s19 v3</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -11,13 +11,20 @@
     html,body,#map{height:100%;margin:0;background:#ffffff}
     .panel{
       position:absolute;top:10px;left:10px;z-index:10;background:#fff;padding:10px 12px;
-      border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.15);font:13px system-ui
+      border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.15);font:13px system-ui;max-width:320px
     }
     .row{display:flex;gap:8px;align-items:center;margin:4px 0}
     .panel h3{margin:0 0 6px 0;font-size:14px}
     .small{color:#666;font-size:12px}
     .pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#f2f2f2;font-size:11px}
     .cursor{cursor:pointer}
+
+    /* wyszukiwarka */
+    .search-item{padding:6px 8px;border-bottom:1px solid #f3f3f3;cursor:pointer}
+    .search-item:last-child{border-bottom:none}
+    .search-item:hover{background:#f8f8f8}
+    .search-id{font-weight:600;font-size:13px}
+    .search-empty{padding:8px;color:#888}
   </style>
 </head>
 <body>
@@ -35,17 +42,28 @@
       <input id="chk-etykiety" type="checkbox" checked><span>Działki – numery</span>
     </label>
     <label class="row cursor" title="Linie rozgraniczające z pliku lr.geojson">
-      <input id="chk-lr" type="checkbox" checked><span>Linia rozgraniczająca</span>
+      <input id="chk-lr" type="checkbox" checked><span>Linie rozgraniczające</span>
     </label>
+
+    <!-- WYSZUKIWARKA po idDzialki -->
+    <div class="row" style="margin-top:8px;gap:6px">
+      <input id="search-id" type="search" placeholder="Szukaj: idDzialki…"
+             style="flex:1;padding:6px 8px;border:1px solid #ddd;border-radius:8px">
+      <button id="search-clear" title="Wyczyść"
+              style="border:0;background:#f2f2f2;border-radius:8px;padding:6px 10px;cursor:pointer">×</button>
+    </div>
+    <div id="search-list"
+         style="max-height:220px;overflow:auto;margin-top:6px;border:1px solid #eee;border-radius:8px;display:none;background:#fff"></div>
+
     <div class="small" style="margin-top:6px">
       <div><span class="pill">Źródło:</span> Cloudflare R2 · GitHub Pages</div>
     </div>
   </div>
 
   <script>
-    const PMTILES_URL = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
-    const GEOJSON_URL = "./dzialki.geojson";
-    const LR_GEOJSON_URL = "./lr.geojson";
+    const PMTILES_URL   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
+    const GEOJSON_URL   = "./dzialki.geojson";
+    const LR_GEOJSON_URL= "./lr.geojson";
 
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
@@ -115,7 +133,7 @@
         }
       }, "dzialki-line");
 
-      // ETYKIETY
+      // etykiety = idDzialki
       map.addLayer({
         id: "dzialki-label",
         type: "symbol",
@@ -136,13 +154,11 @@
         }
       });
 
-      // ====== LINIE ROZGRANICZAJĄCE ======
+      // ====== LINIE ROZGRANICZAJĄCE (na wierzchu) ======
       map.addSource("lr", {
         type: "geojson",
         data: LR_GEOJSON_URL
       });
-
-      // linie czerwone, pełne, na wierzchu
       map.addLayer({
         id: "lr-line",
         type: "line",
@@ -153,14 +169,14 @@
         }
       });
 
-      // POPUP: po kliknięciu działki
+      // POPUP działki
       const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
       map.on("click", "dzialki-fill", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const pr = f.properties || {};
         const id = pr.idDzialki || "-";
-        const nr = pr.NR_DZ || "-";
+        const nr = pr.NR_DZ || pr.NRDZ || "-";
         popup
           .setLngLat(e.lngLat)
           .setHTML(`<div style="font:13px system-ui">
@@ -172,7 +188,118 @@
       map.on("mouseenter", "dzialki-fill", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "dzialki-fill", () => map.getCanvas().style.cursor = "");
 
-      // checkboxy
+      // ====== WYSZUKIWARKA: tylko po idDzialki ======
+      const $inp = document.getElementById("search-id");
+      const $clr = document.getElementById("search-clear");
+      const $lst = document.getElementById("search-list");
+      const MAX_SUGGESTIONS = 30;
+
+      // warstwa highlight (dodana NA WIERZCHU)
+      map.addSource("hit", { type:"geojson", data:{ type:"FeatureCollection", features:[] } });
+      map.addLayer({
+        id:"hit-fill", type:"fill", source:"hit",
+        filter:["==",["geometry-type"],"Polygon"],
+        paint:{ "fill-color":"#ffe680", "fill-opacity":0.35 }
+      });
+      map.addLayer({
+        id:"hit-line", type:"line", source:"hit",
+        paint:{ "line-color":"#000000", "line-width":3 }
+      });
+
+      // indeks: { id, feature, bbox }
+      let ID_INDEX = [];
+      function scanCoords(coords, acc){
+        if (typeof coords[0] === "number"){
+          const x=coords[0], y=coords[1];
+          if (x<acc[0]) acc[0]=x; if (y<acc[1]) acc[1]=y;
+          if (x>acc[2]) acc[2]=x; if (y>acc[3]) acc[3]=y;
+        } else coords.forEach(c => scanCoords(c, acc));
+      }
+      function getBBox(geom){
+        const acc=[Infinity,Infinity,-Infinity,-Infinity];
+        scanCoords(geom.coordinates, acc);
+        return acc;
+      }
+
+      try{
+        const gj = await (await fetch(GEOJSON_URL, {cache:"no-store"})).json();
+        const feats = gj && gj.type==="FeatureCollection" ? gj.features : [];
+        ID_INDEX = feats
+          .filter(f => f && f.properties && f.properties.idDzialki != null)
+          .map(f => {
+            const id = String(f.properties.idDzialki);
+            return { id, idNorm: id.toLowerCase(), feature: f, bbox: getBBox(f.geometry) };
+          });
+      }catch(err){
+        console.warn("Nie udało się zbudować indeksu wyszukiwania:", err);
+      }
+
+      function renderList(items){
+        if (!items.length){
+          $lst.style.display = "none";
+          $lst.innerHTML = "";
+          return;
+        }
+        $lst.style.display = "block";
+        $lst.innerHTML = items.slice(0, MAX_SUGGESTIONS).map((it, idx) => `
+          <div class="search-item" data-idx="${idx}">
+            <div class="search-id">${it.id}</div>
+          </div>
+        `).join("");
+        Array.from($lst.querySelectorAll(".search-item")).forEach((el, i) => {
+          el.addEventListener("click", () => selectItem(items[i]));
+        });
+      }
+
+      function selectItem(item){
+        // highlight
+        map.getSource("hit").setData({
+          type:"FeatureCollection",
+          features:[ item.feature ]
+        });
+        // dopasuj widok
+        const [minX,minY,maxX,maxY] = item.bbox;
+        if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)){
+          map.fitBounds([[minX,minY],[maxX,maxY]], { padding: 30, maxZoom: 21 });
+        }
+        // schowaj listę
+        $lst.style.display = "none";
+      }
+
+      // obsługa wpisywania
+      let debounce = null;
+      $inp.addEventListener("input", () => {
+        clearTimeout(debounce);
+        const q = $inp.value.toLowerCase().trim();
+        if (!q){ renderList([]); return; }
+        debounce = setTimeout(() => {
+          const res = ID_INDEX.filter(r => r.idNorm.includes(q));
+          renderList(res);
+        }, 100);
+      });
+
+      // enter = wybierz pierwszy z listy
+      $inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter"){
+          const q = $inp.value.toLowerCase().trim();
+          const res = ID_INDEX.filter(r => r.idNorm.includes(q));
+          if (res.length) selectItem(res[0]);
+        } else if (e.key === "Escape"){
+          $inp.value = "";
+          renderList([]);
+          map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
+        }
+      });
+
+      // przycisk "x"
+      $clr.addEventListener("click", ()=>{
+        $inp.value = "";
+        renderList([]);
+        map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
+        $inp.focus();
+      });
+
+      // ====== checkboxy ======
       document.getElementById("chk-orto").addEventListener("change", (ev) =>
         map.setLayoutProperty("ortho", "visibility", ev.target.checked ? "visible" : "none")
       );
@@ -201,4 +328,3 @@
   </script>
 </body>
 </html>
-
