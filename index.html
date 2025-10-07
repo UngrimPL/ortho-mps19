@@ -2,13 +2,17 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Orto + działki</title>
+  <title>Orto + działki (białe tło)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
   <style>
-    html,body,#map{height:100%;margin:0;background:#ffffff}
+    html,body,#map {
+      height: 100%;
+      margin: 0;
+      background: #ffffff; /* całkowicie białe tło */
+    }
     .panel {
       position:absolute; top:10px; left:10px; z-index:10;
       background:#fff; padding:10px 12px; border-radius:12px;
@@ -34,7 +38,7 @@
       <input id="chk-dzialki" type="checkbox" checked>
       <span>Działki – obrysy</span>
     </label>
-    <label class="row cursor" title="Numery działek jako etykiety (od z17)">
+    <label class="row cursor">
       <input id="chk-etykiety" type="checkbox" checked>
       <span>Działki – etykiety</span>
     </label>
@@ -44,31 +48,32 @@
   </div>
 
   <script>
-    // ⬇️ ORTO z Cloudflare R2 (PMTiles)
     const PMTILES_URL = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
-    // ⬇️ DZIAŁKI – ścieżka do pliku w repo (wrzuć dzialki.geojson obok index.html)
     const GEOJSON_URL = "./dzialki.geojson";
 
-    // Rejestracja protokołu PMTiles
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
     const p = new pmtiles.PMTiles(PMTILES_URL);
     protocol.add(p);
 
-    // Mapa
     const map = new maplibregl.Map({
       container: "map",
-      style: { version: 8, sources: {}, layers: [] },
-      center: [22.735, 52.081], // start – i tak dopasujemy po nagłówku PMTiles lub po danych działek
+      style: {
+        version: 8,
+        sources: {},
+        layers: [],
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
+      },
+      center: [22.735, 52.081],
       zoom: 17,
       attributionControl: true
     });
+
     map.addControl(new maplibregl.NavigationControl(), "top-left");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
-    // Po załadowaniu
     map.on("load", async () => {
-      // 1) ORTO (raster z PMTiles)
+      // ORTO
       map.addSource("ortho", {
         type: "raster",
         url: `pmtiles://${PMTILES_URL}`,
@@ -77,20 +82,19 @@
       });
       map.addLayer({ id: "ortho", type: "raster", source: "ortho" });
 
-      // Spróbuj dopasować widok do bounds z PMTiles
       try {
         const header = await p.getHeader();
         if (header?.bounds) {
           const [w,s,e,n] = header.bounds;
           map.fitBounds([[w,s],[e,n]], { padding: 20 });
         }
-      } catch (e) { /* ok */ }
+      } catch (e) {}
 
-      // 2) DZIAŁKI (GeoJSON)
+      // DZIAŁKI
       map.addSource("dzialki", {
         type: "geojson",
         data: GEOJSON_URL,
-        promoteId: "idDzialki" // jeśli chcesz później edycję/hover
+        promoteId: "idDzialki"
       });
 
       // obrysy
@@ -99,23 +103,23 @@
         type: "line",
         source: "dzialki",
         paint: {
-          "line-color": "#00ff88",
+          "line-color": "#007bff",   // niebieski
           "line-width": 1.4
         }
       });
 
-      // wypełnienie (delikatne, żeby nie zasłaniać orto) – opcjonalnie
+      // wypełnienie
       map.addLayer({
         id: "dzialki-fill",
         type: "fill",
         source: "dzialki",
         paint: {
-          "fill-color": "#00ff88",
-          "fill-opacity": 0.12
+          "fill-color": "#007bff",
+          "fill-opacity": 0.1
         }
-      }, "dzialki-line"); // poniżej linii
+      }, "dzialki-line");
 
-      // etykiety z NR_DZ (od z17)
+      // etykiety
       map.addLayer({
         id: "dzialki-label",
         type: "symbol",
@@ -123,64 +127,50 @@
         minzoom: 17,
         layout: {
           "text-field": ["get", "NR_DZ"],
-          "text-size": 11,
-          "text-allow-overlap": false,
-          "symbol-placement": "point"
+          "text-size": 11
         },
         paint: {
-          "text-color": "#111",
-          "text-halo-color": "#fff",
-          "text-halo-width": 1.2
+          "text-color": "#000000",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.4
         }
       });
 
-      // Popup po kliknięciu działki
+      // popup
       const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
       map.on("click", "dzialki-fill", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const p = f.properties || {};
-        const id = p.idDzialki || p.ID || "";
-        const nr = p.NR_DZ || p.nr || "";
-        const html = `<div style="font:13px system-ui">
-          <div><b>NR_DZ:</b> ${nr || "-"}</div>
-          <div><b>idDzialki:</b> ${id || "-"}</div>
-        </div>`;
-        popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+        popup
+          .setLngLat(e.lngLat)
+          .setHTML(`<div style="font:13px system-ui">
+            <div><b>NR_DZ:</b> ${p.NR_DZ || "-"}</div>
+            <div><b>ID:</b> ${p.idDzialki || "-"}</div>
+          </div>`)
+          .addTo(map);
       });
+
       map.on("mouseenter", "dzialki-fill", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "dzialki-fill", () => map.getCanvas().style.cursor = "");
 
-      // Checkboxy
-      document.getElementById("chk-orto").addEventListener("change", (ev) => {
-        map.setLayoutProperty("ortho", "visibility", ev.target.checked ? "visible" : "none");
-      });
-      const setDzialkiVisibility = (vis) => {
-        ["dzialki-fill","dzialki-line","dzialki-label"].forEach(id=>{
-          if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
-        });
-      };
+      // checkboxy
+      document.getElementById("chk-orto").addEventListener("change", (ev) =>
+        map.setLayoutProperty("ortho", "visibility", ev.target.checked ? "visible" : "none")
+      );
+
       document.getElementById("chk-dzialki").addEventListener("change", (ev) => {
         const vis = ev.target.checked ? "visible" : "none";
         ["dzialki-fill","dzialki-line"].forEach(id=>{
           if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
         });
       });
-      document.getElementById("chk-etykiety").addEventListener("change", (ev) => {
-        if (map.getLayer("dzialki-label")) {
-          map.setLayoutProperty("dzialki-label", "visibility", ev.target.checked ? "visible" : "none");
-        }
-      });
-    });
 
-    // Proste logowanie błędu ładowania GeoJSON (np. literówka w ścieżce)
-    map.on("error", (e) => {
-      if (e && e.error && /geojson/i.test(String(e.error))) {
-        console.error("Błąd ładowania GeoJSON:", e.error);
-        alert("Nie udało się wczytać dzialki.geojson — sprawdź, czy plik jest w repo obok index.html i ma poprawny JSON.");
-      }
+      document.getElementById("chk-etykiety").addEventListener("change", (ev) => {
+        if (map.getLayer("dzialki-label"))
+          map.setLayoutProperty("dzialki-label", "visibility", ev.target.checked ? "visible" : "none");
+      });
     });
   </script>
 </body>
 </html>
-
