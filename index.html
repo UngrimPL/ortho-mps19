@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Orto z PMTiles (Cloudflare R2)</title>
+  <title>Orto s19 – Zabezpieczone</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -18,63 +18,39 @@
   <div id="toast" class="toast">Ładuję…</div>
 
   <script>
-    // Twój publiczny plik na R2:
-    const PMTILES_URL = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
+    // --- proste hasło ---
+    const PASSWORD = "MP-S19"; // <- zmień tu
+    const input = prompt("Podaj hasło, aby wyświetlić mapę:");
+    if (input !== PASSWORD) {
+      document.body.innerHTML = "<h2 style='font-family:sans-serif;text-align:center;margin-top:40vh'>Nieprawidłowe hasło ❌</h2>";
+      throw new Error("Unauthorized");
+    }
 
-    // Rejestracja protokołu PMTiles
+    // --- konfiguracja PMTiles ---
+    const PMTILES_URL = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
     const p = new pmtiles.PMTiles(PMTILES_URL);
     protocol.add(p);
 
-    // Inicjalizacja mapy
     const map = new maplibregl.Map({
       container: "map",
       style: { version: 8, sources: {}, layers: [] },
-      center: [22.735, 52.081], // Twój obszar
-      zoom: 17,
-      attributionControl: true
+      center: [22.735, 52.081],
+      zoom: 17
     });
     map.addControl(new maplibregl.NavigationControl(), "top-left");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
-    // Drobny test HEAD — pokaże błąd, jeśli URL/public nie działa
-    fetch(PMTILES_URL, { method: "HEAD" })
-      .then(r => {
-        if (!r.ok) throw new Error(r.status + " " + r.statusText);
-        console.log("PMTiles HEAD OK:", r.status);
-      })
-      .catch(e => {
-        console.error("HEAD failed:", e);
-        document.getElementById("toast").textContent = "Błąd dostępu do pliku (HEAD). URL/Public access?";
-      });
-
-    map.on("load", async () => {
-      try {
-        // Jeśli plik ma bounds w nagłówku — dopasuj widok (opcjonalne)
-        const header = await p.getHeader();
-        if (header?.bounds) {
-          const [w,s,e,n] = header.bounds;
-          map.fitBounds([[w,s],[e,n]], { padding: 20 });
-        }
-      } catch (err) {
-        console.warn("Brak/metadane nagłówka — używam ręcznego center/zoom.", err);
-      }
-
-      // Zalecany, prosty sposób podpięcia PMTiles: 'url' z protokołem pmtiles://
+    map.on("load", () => {
       map.addSource("ortho", {
         type: "raster",
         url: `pmtiles://${PMTILES_URL}`,
-        tileSize: 256,
-        minzoom: 0,
-        maxzoom: 24
+        tileSize: 256
       });
-
       map.addLayer({ id: "ortho", type: "raster", source: "ortho" });
-
-      const t = document.getElementById("toast");
-      t.textContent = "Załadowano źródło z R2 ✅";
-      setTimeout(()=> t.remove(), 3500);
+      document.getElementById("toast").textContent = "Załadowano źródło z R2 ✅";
+      setTimeout(()=>document.getElementById("toast").remove(),3000);
     });
   </script>
 </body>
