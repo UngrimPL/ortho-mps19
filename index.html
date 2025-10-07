@@ -26,16 +26,16 @@
   <div class="panel">
     <h3>Warstwy</h3>
     <label class="row cursor">
-      <input id="chk-orto" type="checkbox" checked><span>Orto (PMTiles)</span>
+      <input id="chk-orto" type="checkbox" checked><span>Orto 09/2024</span>
     </label>
     <label class="row cursor">
-      <input id="chk-dzialki" type="checkbox" checked><span>Działki – obrysy/wypełnienie</span>
+      <input id="chk-dzialki" type="checkbox" checked><span>Działki – linie</span>
     </label>
     <label class="row cursor" title="Etykiety pokazują idDzialki">
-      <input id="chk-etykiety" type="checkbox" checked><span>Działki – etykiety (idDzialki)</span>
+      <input id="chk-etykiety" type="checkbox" checked><span>Działki – numery</span>
     </label>
     <div class="small" style="margin-top:6px">
-      <div><span class="pill">Źródło</span> Cloudflare R2 · GitHub Pages</div>
+      <div><span class="pill">Źródło:</span> Cloudflare R2 · GitHub Pages</div>
     </div>
   </div>
 
@@ -143,8 +143,8 @@
         popup
           .setLngLat(e.lngLat)
           .setHTML(`<div style="font:13px system-ui">
-            <div><b>Numer po podziale:</b> ${id}</div>
-            <div><b>Numer przed podziałem:</b> ${nr}</div>
+            <div><b>Nr po podziale:</b> ${id}</div>
+            <div><b>Nr przed podziałem:</b> ${nr}</div>
           </div>`)
           .addTo(map);
       });
@@ -176,3 +176,4 @@
   </script>
 </body>
 </html>
+
