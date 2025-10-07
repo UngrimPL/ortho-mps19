@@ -40,7 +40,7 @@
     </label>
     <label class="row cursor">
       <input id="chk-etykiety" type="checkbox" checked>
-      <span>Działki – etykiety</span>
+      <span>Działki – numery</span>
     </label>
     <div class="small" style="margin-top:6px">
       <div><span class="pill">Źródło</span> Cloudflare R2 · GitHub Pages</div>
@@ -145,8 +145,8 @@
         popup
           .setLngLat(e.lngLat)
           .setHTML(`<div style="font:13px system-ui">
-            <div><b>NR_DZ:</b> ${p.NR_DZ || "-"}</div>
-            <div><b>ID:</b> ${p.idDzialki || "-"}</div>
+            <div><b>Nr przed podziałem:</b> ${p.NR_DZ || "-"}</div>
+            <div><b>Nr po podziale:</b> ${p.idDzialki || "-"}</div>
           </div>`)
           .addTo(map);
       });
@@ -174,3 +174,4 @@
   </script>
 </body>
 </html>
+
