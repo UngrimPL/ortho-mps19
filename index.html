@@ -2,96 +2,77 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Ortofotomapa — Cloudflare R2</title>
+  <title>Orto z PMTiles (R2)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-      background: #dfe4ea;
-      font-family: system-ui, sans-serif;
-    }
-    .info-box {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(255,255,255,0.9);
-      border-radius: 10px;
-      padding: 8px 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      z-index: 10;
-      font-size: 13px;
-    }
+    html,body,#map{height:100%;margin:0;background:#eaeaea}
+    .toast{position:absolute;top:10px;left:10px;background:#fff;padding:8px 12px;
+           border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);font:13px system-ui}
   </style>
 </head>
-
 <body>
   <div id="map"></div>
-  <div class="info-box">
-    <b>Źródło:</b> Cloudflare R2<br>
-    <b>Plik:</b> ms19.pmtiles
-  </div>
+  <div id="toast" class="toast">Ładuję…</div>
 
   <script>
-    // --- konfiguracja PMTiles ---
+    // ⬇️ WSTAW TU DOKŁADNY PUBLICZNY LINK DO OBIEKTU, np.:
+    // https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles
     const PMTILES_URL = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
 
+    // Rejestracja protokołu PMTiles
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
     const p = new pmtiles.PMTiles(PMTILES_URL);
     protocol.add(p);
 
-    // --- inicjalizacja mapy ---
     const map = new maplibregl.Map({
       container: "map",
-      style: {
-        version: 8,
-        sources: {},
-        layers: []
-      },
-      center: [19.2, 52.0], // przykładowe centrum, zostanie dopasowane automatycznie
-      zoom: 14,
-      attributionControl: true
+      style: { version: 8, sources: {}, layers: [] },
+      center: [19.2, 52.0],
+      zoom: 14
     });
-
     map.addControl(new maplibregl.NavigationControl(), "top-left");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
-    // --- po wczytaniu mapy ---
     map.on("load", async () => {
-      // pobierz metadane PMTiles (bounds, zoom)
       try {
-        const header = await p.getHeader();
-        if (header && header.bounds) {
-          const [w, s, e, n] = header.bounds;
-          map.fitBounds([[w, s], [e, n]], { padding: 20 });
+        const header = await p.getHeader();     // wczytanie metadanych
+        if (header?.bounds) {
+          const [w,s,e,n] = header.bounds;
+          map.fitBounds([[w,s],[e,n]], { padding: 20 });
         }
-      } catch (err) {
-        console.error("Nie można odczytać nagłówka PMTiles:", err);
+      } catch(err) {
+        console.error("PMTiles header error:", err);
       }
 
-      // dodaj źródło ortofoto z PMTiles
+      // 👉 zalecany sposób: użyjemy 'url' zamiast 'tiles'
       map.addSource("ortho", {
         type: "raster",
-        tiles: [`pmtiles://${PMTILES_URL}/{z}/{x}/{y}`],
+        url: `pmtiles://${PMTILES_URL}`,   // <— to wszystko
         tileSize: 256,
-        minzoom: 10,
-        maxzoom: 22
+        minzoom: 0,
+        maxzoom: 24
       });
 
-      // dodaj warstwę ortofoto
-      map.addLayer({
-        id: "ortho-layer",
-        type: "raster",
-        source: "ortho",
-        paint: {
-          "raster-opacity": 1
-        }
-      });
+      map.addLayer({ id: "ortho", type: "raster", source: "ortho" });
+
+      document.getElementById("toast").textContent = "Załadowano źródło. Jeśli nic nie widać, sprawdź URL i public access.";
+      setTimeout(()=>document.getElementById("toast").remove(), 4000);
     });
+
+    // Prosty test URL: spróbuj pobrać kilka bajtów aby szybko wykryć 403/404/CORS
+    fetch(PMTILES_URL, { method: "HEAD" })
+      .then(r => {
+        if (!r.ok) throw new Error(r.status + " " + r.statusText);
+        console.log("PMTiles HEAD ok:", r.status);
+      })
+      .catch(e => {
+        console.error("HEAD failed:", e);
+        document.getElementById("toast").textContent = "Błąd dostępu do pliku (HEAD). URL/Public access?";
+      });
   </script>
 </body>
 </html>
