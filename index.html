@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Orto s19</title>
+  <title>Orto s19 v2</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -34,6 +34,9 @@
     <label class="row cursor" title="Etykiety pokazują idDzialki">
       <input id="chk-etykiety" type="checkbox" checked><span>Działki – numery</span>
     </label>
+    <label class="row cursor" title="Linie rozgraniczające z pliku lr.geojson">
+      <input id="chk-lr" type="checkbox" checked><span>Linie rozgraniczające</span>
+    </label>
     <div class="small" style="margin-top:6px">
       <div><span class="pill">Źródło:</span> Cloudflare R2 · GitHub Pages</div>
     </div>
@@ -42,6 +45,7 @@
   <script>
     const PMTILES_URL = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
     const GEOJSON_URL = "./dzialki.geojson";
+    const LR_GEOJSON_URL = "./lr.geojson";
 
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
@@ -111,7 +115,7 @@
         }
       }, "dzialki-line");
 
-      // ETYKIETY = idDzialki (na działce), od z17
+      // ETYKIETY
       map.addLayer({
         id: "dzialki-label",
         type: "symbol",
@@ -132,7 +136,24 @@
         }
       });
 
-      // POPUP: po kliknięciu
+      // ====== LINIE ROZGRANICZAJĄCE ======
+      map.addSource("lr", {
+        type: "geojson",
+        data: LR_GEOJSON_URL
+      });
+
+      // linie czerwone, pełne, na wierzchu
+      map.addLayer({
+        id: "lr-line",
+        type: "line",
+        source: "lr",
+        paint: {
+          "line-color": "#ff0000",
+          "line-width": 2.5
+        }
+      });
+
+      // POPUP: po kliknięciu działki
       const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
       map.on("click", "dzialki-fill", (e) => {
         const f = e.features?.[0];
@@ -165,15 +186,18 @@
         if (map.getLayer("dzialki-label"))
           map.setLayoutProperty("dzialki-label", "visibility", ev.target.checked ? "visible" : "none");
       });
+      document.getElementById("chk-lr").addEventListener("change", (ev) => {
+        if (map.getLayer("lr-line"))
+          map.setLayoutProperty("lr-line", "visibility", ev.target.checked ? "visible" : "none");
+      });
     });
 
     map.on("error", (e) => {
       if (e && e.error && /geojson/i.test(String(e.error))) {
         console.error("Błąd ładowania GeoJSON:", e.error);
-        alert("Nie udało się wczytać dzialki.geojson — sprawdź ścieżkę i poprawność JSON.");
+        alert("Nie udało się wczytać pliku GeoJSON — sprawdź ścieżkę i poprawność JSON.");
       }
     });
   </script>
 </body>
 </html>
-
