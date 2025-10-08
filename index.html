@@ -207,7 +207,7 @@
       maplibregl.addProtocol("pmtiles", protocol.tile);
       const p1 = new pmtiles.PMTiles(PMTILES_URL1);
       const p2 = new pmtiles.PMTiles(PMTILES_URL2);
-      const p3 = new pmtiles.PMTILES(PMTILES_URL3);
+      const p3 = new pmtiles.PMTiles(PMTILES_URL3);
       protocol.add(p1); protocol.add(p2); protocol.add(p3);
 
       // Mapa
@@ -380,3 +380,4 @@
   </script>
 </body>
 </html>
+
