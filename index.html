@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Orto s19 v6</title>
+  <title>Ortofotomapa MP-S19</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -22,12 +22,47 @@
     .search-item:last-child{border-bottom:none}
     .search-item:hover{background:#f8f8f8}
     .search-id{font-weight:600;font-size:13px}
+
+    /* 🔒 Gate (hasło) */
+    #gate{
+      position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+      background:rgba(255,255,255,.95);backdrop-filter:saturate(1.1) blur(3px);z-index:9999
+    }
+    .gate-card{
+      width:min(92vw,380px);border-radius:14px;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,.15);
+      padding:18px 16px;font:14px system-ui;color:#222
+    }
+    .gate-card h2{margin:0 0 12px 0;font-size:18px}
+    .gate-row{display:flex;gap:8px;margin-top:8px}
+    .gate-row input[type="password"]{
+      flex:1;border:1px solid #ddd;border-radius:10px;padding:10px 12px;font:14px system-ui
+    }
+    .gate-row button{
+      border:0;border-radius:10px;padding:10px 14px;background:#111;color:#fff;cursor:pointer
+    }
+    .gate-row button:hover{opacity:.92}
+    .gate-msg{min-height:18px;color:#c00;margin-top:8px}
+    .gate-foot{font-size:12px;color:#666;margin-top:6px}
   </style>
 </head>
 <body>
   <div id="map"></div>
 
-  <div class="panel">
+  <!-- 🔒 Hasło (overlay) -->
+  <div id="gate" aria-modal="true" role="dialog">
+    <div class="gate-card">
+      <h2>Dostęp chroniony</h2>
+      <div>Podaj hasło, aby otworzyć mapę.</div>
+      <div class="gate-row">
+        <input id="pass" type="password" placeholder="Hasło" autocomplete="current-password" />
+        <button id="pass-btn">Wejdź</button>
+      </div>
+      <div class="gate-msg" id="pass-msg"></div>
+      <div class="gate-foot">Podpowiedź: skontaktuj się z administratorem projektu.</div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel" style="display:none">
     <h3>Warstwy</h3>
 
     <!-- ORTO 1 -->
@@ -79,227 +114,260 @@
   </div>
 
   <script>
-    // ⬇️ ORTO pliki PMTiles
-    const PMTILES_URL1   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19_2.pmtiles";
-    const PMTILES_URL2   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19pd_2.pmtiles";
-    const PMTILES_URL3   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19bok.pmtiles"; // <— nowy (#3)
+    /* ===============================
+       🔒 Ustawienia bramki hasłowej
+       =============================== */
+    const PASSWORD = "orto-S19";          // ⬅️ ZMIEŃ na własne hasło
+    const AUTH_KEY = "ortofoto_auth_ok";   // wpis w sessionStorage
 
-    const GEOJSON_URL    = "./dzialki.geojson";
-    const LR_GEOJSON_URL = "./lr.geojson";
+    // Jeśli w tej sesji już odblokowano — chowamy gate i startujemy mapę
+    if (sessionStorage.getItem(AUTH_KEY) === "1") {
+      document.getElementById("gate").style.display = "none";
+      document.getElementById("panel").style.display = "block";
+      initMap();
+    } else {
+      setupGate();
+    }
 
-    // PMTiles protocol
-    const protocol = new pmtiles.Protocol();
-    maplibregl.addProtocol("pmtiles", protocol.tile);
-    const p1 = new pmtiles.PMTiles(PMTILES_URL1);
-    const p2 = new pmtiles.PMTiles(PMTILES_URL2);
-    const p3 = new pmtiles.PMTiles(PMTILES_URL3);
-    protocol.add(p1);
-    protocol.add(p2);
-    protocol.add(p3);
+    function setupGate(){
+      const $gate = document.getElementById("gate");
+      const $panel = document.getElementById("panel");
+      const $inp = document.getElementById("pass");
+      const $btn = document.getElementById("pass-btn");
+      const $msg = document.getElementById("pass-msg");
 
-    // Mapa
-    const map = new maplibregl.Map({
-      container: "map",
-      style: {
-        version: 8,
-        sources: {},
-        layers: [],
-        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
-      },
-      center: [22.735, 52.081],
-      zoom: 17,
-      attributionControl: true
-    });
-    map.addControl(new maplibregl.NavigationControl(), "top-left");
-    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+      function tryUnlock(){
+        const v = ($inp.value || "").trim();
+        if (!v) { $msg.textContent = "Podaj hasło."; return; }
+        if (v === PASSWORD){
+          sessionStorage.setItem(AUTH_KEY, "1");
+          $msg.textContent = "";
+          $gate.style.display = "none";
+          $panel.style.display = "block";
+          initMap(); // dopiero teraz ładujemy mapę
+        } else {
+          $msg.textContent = "Nieprawidłowe hasło.";
+          $inp.select();
+        }
+      }
+      $btn.addEventListener("click", tryUnlock);
+      $inp.addEventListener("keydown", (e)=>{ if(e.key==="Enter") tryUnlock(); });
+      // autofocus po krótkiej chwili (na mobilkach)
+      setTimeout(()=>{ try{ $inp.focus(); }catch(_){} }, 50);
+    }
 
-    map.on("load", async () => {
-      // ===== ORTO 1 =====
-      map.addSource("ortho1", {
-        type: "raster",
-        url: `pmtiles://${PMTILES_URL1}`,
-        tileSize: 256, minzoom: 0, maxzoom: 24
-      });
-      map.addLayer({ id: "ortho1", type: "raster", source: "ortho1", paint: { "raster-opacity": 1 } });
+    /* ===============================
+       🗺️ MAPA – inicjalizacja po odblokowaniu
+       =============================== */
+    function initMap(){
+      // ⬇️ ORTO pliki PMTiles
+      const PMTILES_URL1   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19_2.pmtiles";
+      const PMTILES_URL2   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19pd_2.pmtiles";
+      const PMTILES_URL3   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19bok.pmtiles"; // <— nowy (#3)
 
-      // dopasuj do bounds ORTO 1 (jeśli dostępne)
-      try {
-        const h = await p1.getHeader();
-        if (h?.bounds) map.fitBounds([[h.bounds[0],h.bounds[1]],[h.bounds[2],h.bounds[3]]], { padding:20 });
-      } catch(e){}
+      const GEOJSON_URL    = "./dzialki.geojson";
+      const LR_GEOJSON_URL = "./lr.geojson";
 
-      // ===== ORTO 2 =====
-      map.addSource("ortho2", {
-        type: "raster",
-        url: `pmtiles://${PMTILES_URL2}`,
-        tileSize: 256, minzoom: 0, maxzoom: 24
-      });
-      map.addLayer({
-        id: "ortho2",
-        type: "raster",
-        source: "ortho2",
-        paint: { "raster-opacity": 1 } // pełna nieprzezroczystość
-      });
-      // (nie ukrywamy — startuje widoczne)
+      // PMTiles protocol
+      const protocol = new pmtiles.Protocol();
+      maplibregl.addProtocol("pmtiles", protocol.tile);
+      const p1 = new pmtiles.PMTiles(PMTILES_URL1);
+      const p2 = new pmtiles.PMTiles(PMTILES_URL2);
+      const p3 = new pmtiles.PMTiles(PMTILES_URL3);
+      protocol.add(p1); protocol.add(p2); protocol.add(p3);
 
-      // ===== ORTO 3 =====
-      map.addSource("ortho3", {
-        type: "raster",
-        url: `pmtiles://${PMTILES_URL3}`,
-        tileSize: 256, minzoom: 0, maxzoom: 24
-      });
-      map.addLayer({
-        id: "ortho3",
-        type: "raster",
-        source: "ortho3",
-        paint: { "raster-opacity": 1 } // pełna nieprzezroczystość
-      });
-      // (nie ukrywamy — startuje widoczne)
-
-      // ===== DZIAŁKI =====
-      map.addSource("dzialki", { type:"geojson", data:GEOJSON_URL, promoteId:"idDzialki" });
-
-      map.addLayer({
-        id: "dzialki-line",
-        type: "line",
-        source: "dzialki",
-        paint: { "line-color": "#007bff", "line-width": 1.4 }
-      });
-
-      map.addLayer({
-        id: "dzialki-fill",
-        type: "fill",
-        source: "dzialki",
-        paint: { "fill-color": "#007bff", "fill-opacity": 0.10 }
-      }, "dzialki-line");
-
-      map.addLayer({
-        id: "dzialki-label",
-        type: "symbol",
-        source: "dzialki",
-        minzoom: 17,
-        layout: {
-          "text-field": ["coalesce", ["get", "idDzialki"], ""],
-          "text-size": 11, "text-allow-overlap": false,
-          "symbol-placement": "point", "text-justify":"center", "text-anchor":"center"
+      // Mapa
+      const map = new maplibregl.Map({
+        container: "map",
+        style: {
+          version: 8,
+          sources: {},
+          layers: [],
+          glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
         },
-        paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 1.4 }
+        center: [22.735, 52.081],
+        zoom: 17,
+        attributionControl: true
       });
+      map.addControl(new maplibregl.NavigationControl(), "top-left");
+      map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
-      // ===== LR =====
-      map.addSource("lr", { type:"geojson", data:LR_GEOJSON_URL });
-      map.addLayer({ id: "lr-line", type:"line", source:"lr", paint:{ "line-color":"#ff0000", "line-width":2.5 } });
-
-      // ===== POPUP DZIAŁKI =====
-      const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
-      map.on("click", "dzialki-fill", (e) => {
-        const f = e.features?.[0]; if (!f) return;
-        const pr = f.properties || {};
-        const id = pr.idDzialki || "-";
-        const nr = pr.NR_DZ || pr.NRDZ || "-";
-        popup.setLngLat(e.lngLat).setHTML(
-          `<div style="font:13px system-ui">
-            <div><b>Nr po podziale:</b> ${id}</div>
-            <div><b>Nr przed podziałem:</b> ${nr}</div>
-          </div>`
-        ).addTo(map);
-      });
-      map.on("mouseenter", "dzialki-fill", () => map.getCanvas().style.cursor = "pointer");
-      map.on("mouseleave", "dzialki-fill", () => map.getCanvas().style.cursor = "");
-
-      // ===== WYSZUKIWARKA =====
-      const $inp = document.getElementById("search-id");
-      const $clr = document.getElementById("search-clear");
-      const $lst = document.getElementById("search-list");
-      const MAX_SUGGESTIONS = 30;
-
-      map.addSource("hit", { type:"geojson", data:{ type:"FeatureCollection", features:[] } });
-      map.addLayer({ id:"hit-fill", type:"fill", source:"hit", filter:["==",["geometry-type"],"Polygon"], paint:{ "fill-color":"#ffe680", "fill-opacity":0.35 } });
-      map.addLayer({ id:"hit-line", type:"line", source:"hit", paint:{ "line-color":"#ffd200", "line-width":3 } }); // żółty obrys
-
-      let ID_INDEX = [];
-      function scanCoords(coords, acc){
-        if (typeof coords[0]==="number"){
-          const x=coords[0],y=coords[1];
-          if(x<acc[0])acc[0]=x; if(y<acc[1])acc[1]=y; if(x>acc[2])acc[2]=x; if(y>acc[3])acc[3]=y;
-        } else coords.forEach(c=>scanCoords(c,acc));
-      }
-      function getBBox(geom){ const a=[Infinity,Infinity,-Infinity,-Infinity]; scanCoords(geom.coordinates,a); return a; }
-
-      try{
-        const gj = await (await fetch(GEOJSON_URL, {cache:"no-store"})).json();
-        const feats = gj?.type==="FeatureCollection" ? gj.features : [];
-        ID_INDEX = feats.filter(f=>f?.properties?.idDzialki!=null).map(f=>{
-          const id = String(f.properties.idDzialki);
-          return { id, idNorm:id.toLowerCase(), feature:f, bbox:getBBox(f.geometry) };
+      map.on("load", async () => {
+        // ===== ORTO 1 =====
+        map.addSource("ortho1", {
+          type: "raster",
+          url: `pmtiles://${PMTILES_URL1}`,
+          tileSize: 256, minzoom: 0, maxzoom: 24
         });
-      }catch(err){ console.warn("Nie udało się zbudować indeksu wyszukiwania:", err); }
+        map.addLayer({ id: "ortho1", type: "raster", source: "ortho1", paint: { "raster-opacity": 1 } });
 
-      function renderList(items){
-        if (!items.length){ $lst.style.display="none"; $lst.innerHTML=""; return; }
-        $lst.style.display="block";
-        $lst.innerHTML = items.slice(0,MAX_SUGGESTIONS).map((it,i)=>`
-          <div class="search-item" data-idx="${i}"><div class="search-id">${it.id}</div></div>
-        `).join("");
-        Array.from($lst.querySelectorAll(".search-item")).forEach((el,i)=>el.addEventListener("click",()=>selectItem(items[i])));
-      }
-      function selectItem(item){
-        map.getSource("hit").setData({ type:"FeatureCollection", features:[item.feature] });
-        const [minX,minY,maxX,maxY] = item.bbox;
-        if (isFinite(minX)&&isFinite(minY)&&isFinite(maxX)&&isFinite(maxY)){
-          map.fitBounds([[minX,minY],[maxX,maxY]], { padding:30, maxZoom:21 });
+        // dopasuj do bounds ORTO 1 (jeśli dostępne)
+        try {
+          const h = await p1.getHeader();
+          if (h?.bounds) map.fitBounds([[h.bounds[0],h.bounds[1]],[h.bounds[2],h.bounds[3]]], { padding:20 });
+        } catch(e){}
+
+        // ===== ORTO 2 =====
+        map.addSource("ortho2", {
+          type: "raster",
+          url: `pmtiles://${PMTILES_URL2}`,
+          tileSize: 256, minzoom: 0, maxzoom: 24
+        });
+        map.addLayer({ id: "ortho2", type: "raster", source: "ortho2", paint: { "raster-opacity": 1 } });
+
+        // ===== ORTO 3 =====
+        map.addSource("ortho3", {
+          type: "raster",
+          url: `pmtiles://${PMTILES_URL3}`,
+          tileSize: 256, minzoom: 0, maxzoom: 24
+        });
+        map.addLayer({ id: "ortho3", type: "raster", source: "ortho3", paint: { "raster-opacity": 1 } });
+
+        // ===== DZIAŁKI =====
+        map.addSource("dzialki", { type:"geojson", data:GEOJSON_URL, promoteId:"idDzialki" });
+
+        map.addLayer({
+          id: "dzialki-line",
+          type: "line",
+          source: "dzialki",
+          paint: { "line-color": "#007bff", "line-width": 1.4 }
+        });
+
+        map.addLayer({
+          id: "dzialki-fill",
+          type: "fill",
+          source: "dzialki",
+          paint: { "fill-color": "#007bff", "fill-opacity": 0.10 }
+        }, "dzialki-line");
+
+        map.addLayer({
+          id: "dzialki-label",
+          type: "symbol",
+          source: "dzialki",
+          minzoom: 17,
+          layout: {
+            "text-field": ["coalesce", ["get", "idDzialki"], ""],
+            "text-size": 11, "text-allow-overlap": false,
+            "symbol-placement": "point", "text-justify":"center", "text-anchor":"center"
+          },
+          paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 1.4 }
+        });
+
+        // ===== LR =====
+        map.addSource("lr", { type:"geojson", data:LR_GEOJSON_URL });
+        map.addLayer({ id: "lr-line", type:"line", source:"lr", paint:{ "line-color":"#ff0000", "line-width":2.5 } });
+
+        // ===== POPUP DZIAŁKI =====
+        const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
+        map.on("click", "dzialki-fill", (e) => {
+          const f = e.features?.[0]; if (!f) return;
+          const pr = f.properties || {};
+          const id = pr.idDzialki || "-";
+          const nr = pr.NR_DZ || pr.NRDZ || "-";
+          popup.setLngLat(e.lngLat).setHTML(
+            `<div style="font:13px system-ui">
+              <div><b>Nr po podziale:</b> ${id}</div>
+              <div><b>Nr przed podziałem:</b> ${nr}</div>
+            </div>`
+          ).addTo(map);
+        });
+        map.on("mouseenter", "dzialki-fill", () => map.getCanvas().style.cursor = "pointer");
+        map.on("mouseleave", "dzialki-fill", () => map.getCanvas().style.cursor = "");
+
+        // ===== WYSZUKIWARKA =====
+        const $inp = document.getElementById("search-id");
+        const $clr = document.getElementById("search-clear");
+        const $lst = document.getElementById("search-list");
+        const MAX_SUGGESTIONS = 30;
+
+        map.addSource("hit", { type:"geojson", data:{ type:"FeatureCollection", features:[] } });
+        map.addLayer({ id:"hit-fill", type:"fill", source:"hit", filter:["==",["geometry-type"],"Polygon"], paint:{ "fill-color":"#ffe680", "fill-opacity":0.35 } });
+        map.addLayer({ id:"hit-line", type:"line", source:"hit", paint:{ "line-color":"#ffd200", "line-width":3 } }); // żółty obrys
+
+        let ID_INDEX = [];
+        function scanCoords(coords, acc){
+          if (typeof coords[0]==="number"){
+            const x=coords[0],y=coords[1];
+            if(x<acc[0])acc[0]=x; if(y<acc[1])acc[1]=y; if(x>acc[2])acc[2]=x; if(y>acc[3])acc[3]=y;
+          } else coords.forEach(c=>scanCoords(c,acc));
         }
-        $lst.style.display="none";
-      }
-      let debounce=null;
-      $inp.addEventListener("input", ()=>{
-        clearTimeout(debounce);
-        const q=$inp.value.toLowerCase().trim();
-        if(!q){ renderList([]); return; }
-        debounce=setTimeout(()=>{ const res = ID_INDEX.filter(r=>r.idNorm.includes(q)); renderList(res); }, 100);
-      });
-      $inp.addEventListener("keydown",(e)=>{
-        if(e.key==="Enter"){
+        function getBBox(geom){ const a=[Infinity,Infinity,-Infinity,-Infinity]; scanCoords(geom.coordinates,a); return a; }
+
+        try{
+          const gj = await (await fetch(GEOJSON_URL, {cache:"no-store"})).json();
+          const feats = gj?.type==="FeatureCollection" ? gj.features : [];
+          ID_INDEX = feats.filter(f=>f?.properties?.idDzialki!=null).map(f=>{
+            const id = String(f.properties.idDzialki);
+            return { id, idNorm:id.toLowerCase(), feature:f, bbox:getBBox(f.geometry) };
+          });
+        }catch(err){ console.warn("Nie udało się zbudować indeksu wyszukiwania:", err); }
+
+        function renderList(items){
+          if (!items.length){ $lst.style.display="none"; $lst.innerHTML=""; return; }
+          $lst.style.display="block";
+          $lst.innerHTML = items.slice(0,MAX_SUGGESTIONS).map((it,i)=>`
+            <div class="search-item" data-idx="${i}"><div class="search-id">${it.id}</div></div>
+          `).join("");
+          Array.from($lst.querySelectorAll(".search-item")).forEach((el,i)=>el.addEventListener("click",()=>selectItem(items[i])));
+        }
+        function selectItem(item){
+          map.getSource("hit").setData({ type:"FeatureCollection", features:[item.feature] });
+          const [minX,minY,maxX,maxY] = item.bbox;
+          if (isFinite(minX)&&isFinite(minY)&&isFinite(maxX)&&isFinite(maxY)){
+            map.fitBounds([[minX,minY],[maxX,maxY]], { padding:30, maxZoom:21 });
+          }
+          $lst.style.display="none";
+        }
+        let debounce=null;
+        $inp.addEventListener("input", ()=>{
+          clearTimeout(debounce);
           const q=$inp.value.toLowerCase().trim();
-          const res=ID_INDEX.filter(r=>r.idNorm.includes(q));
-          if(res.length) selectItem(res[0]);
-        } else if(e.key==="Escape"){
-          $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
+          if(!q){ renderList([]); return; }
+          debounce=setTimeout(()=>{ const res = ID_INDEX.filter(r=>r.idNorm.includes(q)); renderList(res); }, 100);
+        });
+        $inp.addEventListener("keydown",(e)=>{
+          if(e.key==="Enter"){
+            const q=$inp.value.toLowerCase().trim();
+            const res=ID_INDEX.filter(r=>r.idNorm.includes(q));
+            if(res.length) selectItem(res[0]);
+          } else if(e.key==="Escape"){
+            $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
+          }
+        });
+        $clr.addEventListener("click", ()=>{
+          $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); $inp.focus();
+        });
+
+        // ===== PRZEŁĄCZNIKI =====
+        document.getElementById("chk-orto1").addEventListener("change", (ev)=>
+          map.setLayoutProperty("ortho1","visibility", ev.target.checked?"visible":"none")
+        );
+        document.getElementById("chk-orto2").addEventListener("change", (ev)=>
+          map.setLayoutProperty("ortho2","visibility", ev.target.checked?"visible":"none")
+        );
+        document.getElementById("chk-orto3").addEventListener("change", (ev)=>
+          map.setLayoutProperty("ortho3","visibility", ev.target.checked?"visible":"none")
+        );
+
+        document.getElementById("chk-dzialki").addEventListener("change", (ev)=>{
+          const vis = ev.target.checked?"visible":"none";
+          ["dzialki-fill","dzialki-line"].forEach(id=>{ if(map.getLayer(id)) map.setLayoutProperty(id,"visibility",vis); });
+        });
+        document.getElementById("chk-etykiety").addEventListener("change", (ev)=>{
+          if(map.getLayer("dzialki-label")) map.setLayoutProperty("dzialki-label","visibility", ev.target.checked?"visible":"none");
+        });
+        document.getElementById("chk-lr").addEventListener("change", (ev)=>{
+          if(map.getLayer("lr-line")) map.setLayoutProperty("lr-line","visibility", ev.target.checked?"visible":"none");
+        });
+      });
+
+      map.on("error",(e)=>{
+        if(e && e.error && /geojson/i.test(String(e.error))){
+          console.error("Błąd ładowania GeoJSON:", e.error);
+          alert("Nie udało się wczytać pliku GeoJSON — sprawdź ścieżki i poprawność JSON.");
         }
       });
-      $clr.addEventListener("click", ()=>{
-        $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); $inp.focus();
-      });
-
-      // ===== PRZEŁĄCZNIKI =====
-      document.getElementById("chk-orto1").addEventListener("change", (ev)=>
-        map.setLayoutProperty("ortho1","visibility", ev.target.checked?"visible":"none")
-      );
-      document.getElementById("chk-orto2").addEventListener("change", (ev)=>
-        map.setLayoutProperty("ortho2","visibility", ev.target.checked?"visible":"none")
-      );
-      document.getElementById("chk-orto3").addEventListener("change", (ev)=>
-        map.setLayoutProperty("ortho3","visibility", ev.target.checked?"visible":"none")
-      );
-
-      document.getElementById("chk-dzialki").addEventListener("change", (ev)=>{
-        const vis = ev.target.checked?"visible":"none";
-        ["dzialki-fill","dzialki-line"].forEach(id=>{ if(map.getLayer(id)) map.setLayoutProperty(id,"visibility",vis); });
-      });
-      document.getElementById("chk-etykiety").addEventListener("change", (ev)=>{
-        if(map.getLayer("dzialki-label")) map.setLayoutProperty("dzialki-label","visibility", ev.target.checked?"visible":"none");
-      });
-      document.getElementById("chk-lr").addEventListener("change", (ev)=>{
-        if(map.getLayer("lr-line")) map.setLayoutProperty("lr-line","visibility", ev.target.checked?"visible":"none");
-      });
-    });
-
-    map.on("error",(e)=>{
-      if(e && e.error && /geojson/i.test(String(e.error))){
-        console.error("Błąd ładowania GeoJSON:", e.error);
-        alert("Nie udało się wczytać pliku GeoJSON — sprawdź ścieżki i poprawność JSON.");
-      }
-    });
+    }
   </script>
 </body>
 </html>
