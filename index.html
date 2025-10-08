@@ -38,7 +38,7 @@
 
     <!-- ORTO 2 -->
     <label class="row cursor">
-      <input id="chk-orto2" type="checkbox">
+      <input id="chk-orto2" type="checkbox" checked>
       <span>Ortofotomapa 09/2024 (#2)</span>
     </label>
 
@@ -130,7 +130,7 @@
         source: "ortho2",
         paint: { "raster-opacity": 1 }
       });
-      map.setLayoutProperty("ortho2", "visibility", "none");
+      map.setLayoutProperty("ortho2", "visibility", "visible");
 
       // ===== DZIAŁKI =====
       map.addSource("dzialki", { type:"geojson", data:GEOJSON_URL, promoteId:"idDzialki" });
@@ -191,7 +191,7 @@
 
       map.addSource("hit", { type:"geojson", data:{ type:"FeatureCollection", features:[] } });
       map.addLayer({ id:"hit-fill", type:"fill", source:"hit", filter:["==",["geometry-type"],"Polygon"], paint:{ "fill-color":"#ffe680", "fill-opacity":0.35 } });
-      map.addLayer({ id:"hit-line", type:"line", source:"hit", paint:{ "line-color":"#000000", "line-width":3 } });
+      map.addLayer({ id:"hit-line", type:"line", source:"hit", paint:{ "line-color":"#ffd200", "line-width":3 } });
 
       let ID_INDEX = [];
       function scanCoords(coords, acc){ if (typeof coords[0]==="number"){ const x=coords[0],y=coords[1]; if(x<acc[0])acc[0]=x; if(y<acc[1])acc[1]=y; if(x>acc[2])acc[2]=x; if(y>acc[3])acc[3]=y; } else coords.forEach(c=>scanCoords(c,acc)); }
@@ -264,4 +264,5 @@
   </script>
 </body>
 </html>
+
 
