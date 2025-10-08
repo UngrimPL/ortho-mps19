@@ -2,20 +2,20 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Ortofotomapa MP-S19</title>
+  <title>Orto s19 v7</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
   <style>
     html,body,#map{height:100%;margin:0;background:#ffffff}
-    /* Panel odsunięty, by nie nachodził na przyciski */
+    /* Panel odsunięty od lewej, by nie nachodził na przyciski */
     .panel{
       position:absolute;top:10px;left:74px;z-index:10;background:#fff;padding:10px 12px;
       border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.15);font:13px system-ui;max-width:340px
     }
     .row{display:flex;gap:8px;align-items:center;margin:4px 0}
-    .panel h3{margin:0 0 6px 0;font-size:14px}
+    .panel h3{margin:0 0 6px 0;font-size:14px;font-weight:700;color:#111}
     .small{color:#666;font-size:12px}
     .pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#f2f2f2;font-size:11px}
     .cursor{cursor:pointer}
@@ -23,6 +23,7 @@
     .search-item:last-child{border-bottom:none}
     .search-item:hover{background:#f8f8f8}
     .search-id{font-weight:600;font-size:13px}
+    .sep{border:none;border-top:1px solid #eaeaea;margin:8px 0 10px}
 
     /* 🔒 Gate (hasło) */
     #gate{
@@ -63,7 +64,6 @@
     }
     .btn.secondary{background:#f0f0f0;color:#111;border:1px solid #e5e5e5}
 
-    /* Mobile – gdy mało miejsca, panel pod toolbar */
     @media (max-width: 640px){
       .panel{left:10px;top:70px}
     }
@@ -72,7 +72,7 @@
 <body>
   <div id="map"></div>
 
-  <!-- 🧰 Własny toolbar (nie używamy już wbudowanego NavigationControl) -->
+  <!-- 🧰 Własny toolbar -->
   <div class="toolbox" id="toolbox" style="display:none">
     <button class="toolbtn" id="tb-zoom-in" title="Powiększ"><span class="toolicon">＋</span></button>
     <button class="toolbtn" id="tb-zoom-out" title="Pomniejsz"><span class="toolicon">－</span></button>
@@ -102,13 +102,13 @@
       <span>Ortofotomapa 09/2024 (#1)</span>
     </label>
 
-    <!-- ORTO 2 (domyślnie WŁĄCZONE) -->
+    <!-- ORTO 2 -->
     <label class="row cursor">
       <input id="chk-orto2" type="checkbox" checked>
       <span>Ortofotomapa 09/2024 (#2)</span>
     </label>
 
-    <!-- ORTO 3 (domyślnie WŁĄCZONE) -->
+    <!-- ORTO 3 -->
     <label class="row cursor">
       <input id="chk-orto3" type="checkbox" checked>
       <span>Ortofotomapa 09/2024 (#3)</span>
@@ -129,14 +129,14 @@
       <span>Linia rozgraniczająca</span>
     </label>
 
-    <!-- WYSZUKIWARKA po idDzialki -->
-    <div class="small" style="margin-top:10px;margin-bottom:2px;font-weight:600">Wyszukaj działkę</div>
+    <hr class="sep">
+    <h3>Wyszukaj działkę</h3>
+
     <div class="row" style="gap:6px">
-      <input id="search-id" type="search" placeholder="np. 140203_4.0001.1457"
+      <input id="search-id" type="search" placeholder="nr działki"
              style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:8px">
     </div>
     <div class="btnrow">
-      <button id="search-show" class="btn">Pokaż działkę</button>
       <button id="search-clear" class="btn secondary">Wyczyść</button>
     </div>
     <div id="search-list"
@@ -151,8 +151,8 @@
     /* ===============================
        🔒 Ustawienia bramki hasłowej
        =============================== */
-    const PASSWORD = "S19-ortho";          // ⬅️ ZMIEŃ na własne hasło
-    const AUTH_KEY = "ortofoto_auth_ok";   // wpis w sessionStorage
+    const PASSWORD = "S19-ortho";          // ⬅️ zmień na własne
+    const AUTH_KEY = "ortofoto_auth_ok";
 
     if (sessionStorage.getItem(AUTH_KEY) === "1") {
       document.getElementById("gate").style.display = "none";
@@ -166,7 +166,7 @@
     function setupGate(){
       const $gate = document.getElementById("gate");
       const $panel = document.getElementById("panel");
-      const $tool = document.getElementById("toolbox");
+      const $tool  = document.getElementById("toolbox");
       const $inp = document.getElementById("pass");
       const $btn = document.getElementById("pass-btn");
       const $msg = document.getElementById("pass-msg");
@@ -207,19 +207,16 @@
       maplibregl.addProtocol("pmtiles", protocol.tile);
       const p1 = new pmtiles.PMTiles(PMTILES_URL1);
       const p2 = new pmtiles.PMTiles(PMTILES_URL2);
-      const p3 = new pmtiles.PMTiles(PMTILES_URL3);
+      const p3 = new pmtiles.PMTILES(PMTILES_URL3);
       protocol.add(p1); protocol.add(p2); protocol.add(p3);
 
       // Mapa
       const map = new maplibregl.Map({
         container: "map",
-        style: {
-          version: 8, sources: {}, layers: [],
-          glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
-        },
+        style: { version: 8, sources: {}, layers: [],
+                 glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf" },
         center: [22.735, 52.081], zoom: 17, attributionControl: true
       });
-      // Nie dodajemy NavigationControl – używamy własnego toolbara
       map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
       // ===== obsługa przycisków + / – / ⤢ =====
@@ -228,41 +225,17 @@
       const tbFit = document.getElementById("tb-fit");
       tbIn.onclick  = ()=> map.zoomIn();
       tbOut.onclick = ()=> map.zoomOut();
-
-      // policzymy wspólne bounds z nagłówków PMTiles (#1,#2,#3)
       let BOUNDS_ALL = null;
-      (async () => {
-        const headers = [];
-        try { headers.push(await p1.getHeader()); } catch(e){}
-        try { headers.push(await p2.getHeader()); } catch(e){}
-        try { headers.push(await p3.getHeader()); } catch(e){}
-        const b = headers.map(h=>h?.bounds).filter(Boolean);
-        if (b.length){
-          const minX = Math.min(...b.map(bb=>bb[0]));
-          const minY = Math.min(...b.map(bb=>bb[1]));
-          const maxX = Math.max(...b.map(bb=>bb[2]));
-          const maxY = Math.max(...b.map(bb=>bb[3]));
-          BOUNDS_ALL = [[minX,minY],[maxX,maxY]];
-        }
-      })();
-      tbFit.onclick = ()=> {
-        if (BOUNDS_ALL) map.fitBounds(BOUNDS_ALL, { padding: 20, maxZoom: 21 });
-      };
+      tbFit.onclick = ()=>{ if (BOUNDS_ALL) map.fitBounds(BOUNDS_ALL, { padding:20, maxZoom:21 }); };
 
       map.on("load", async () => {
-        // ===== ORTO 1 =====
+        // ===== ORTO 1/2/3 =====
         map.addSource("ortho1", { type:"raster", url:`pmtiles://${PMTILES_URL1}`, tileSize:256, minzoom:0, maxzoom:24 });
         map.addLayer({ id:"ortho1", type:"raster", source:"ortho1", paint:{ "raster-opacity":1 } });
-        try{
-          const h = await p1.getHeader();
-          if (h?.bounds && !BOUNDS_ALL) map.fitBounds([[h.bounds[0],h.bounds[1]],[h.bounds[2],h.bounds[3]]], { padding:20 });
-        }catch(e){}
 
-        // ===== ORTO 2 =====
         map.addSource("ortho2", { type:"raster", url:`pmtiles://${PMTILES_URL2}`, tileSize:256, minzoom:0, maxzoom:24 });
         map.addLayer({ id:"ortho2", type:"raster", source:"ortho2", paint:{ "raster-opacity":1 } });
 
-        // ===== ORTO 3 =====
         map.addSource("ortho3", { type:"raster", url:`pmtiles://${PMTILES_URL3}`, tileSize:256, minzoom:0, maxzoom:24 });
         map.addLayer({ id:"ortho3", type:"raster", source:"ortho3", paint:{ "raster-opacity":1 } });
 
@@ -301,7 +274,6 @@
         // ===== WYSZUKIWARKA =====
         const $inp = document.getElementById("search-id");
         const $clr = document.getElementById("search-clear");
-        const $show= document.getElementById("search-show");
         const $lst = document.getElementById("search-list");
         const MAX_SUGGESTIONS = 30;
 
@@ -343,11 +315,6 @@
           }
           $lst.style.display="none";
         }
-        function showFirstMatch(){
-          const q=$inp.value.toLowerCase().trim();
-          const res=ID_INDEX.filter(r=>r.idNorm.includes(q));
-          if(res.length) selectItem(res[0]);
-        }
 
         let debounce=null;
         $inp.addEventListener("input", ()=>{
@@ -357,10 +324,14 @@
           debounce=setTimeout(()=>{ const res = ID_INDEX.filter(r=>r.idNorm.includes(q)); renderList(res); }, 100);
         });
         $inp.addEventListener("keydown",(e)=>{
-          if(e.key==="Enter") showFirstMatch();
-          else if(e.key==="Escape"){ $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); }
+          if(e.key==="Enter"){
+            const q=$inp.value.toLowerCase().trim();
+            const res=ID_INDEX.filter(r=>r.idNorm.includes(q));
+            if(res.length) selectItem(res[0]);
+          } else if(e.key==="Escape"){
+            $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
+          }
         });
-        $show.addEventListener("click", showFirstMatch);
         $clr.addEventListener("click", ()=>{
           $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); $inp.focus();
         });
@@ -385,6 +356,18 @@
         document.getElementById("chk-lr").addEventListener("change", (ev)=>{
           if(map.getLayer("lr-line")) map.setLayoutProperty("lr-line","visibility", ev.target.checked?"visible":"none");
         });
+
+        /* === Pokaż cały zakres automatycznie po starcie (łączone bounds 1+2+3) === */
+        try{
+          const hs = [await p1.getHeader(), await p2.getHeader(), await p3.getHeader()];
+          const bs = hs.map(h=>h?.bounds).filter(Boolean);
+          if (bs.length){
+            const minX=Math.min(...bs.map(b=>b[0])), minY=Math.min(...bs.map(b=>b[1]));
+            const maxX=Math.max(...bs.map(b=>b[2])), maxY=Math.max(...bs.map(b=>b[3]));
+            BOUNDS_ALL = [[minX,minY],[maxX,maxY]];
+            map.fitBounds(BOUNDS_ALL, { padding:20, maxZoom:21 });
+          }
+        }catch(_){}
       });
 
       map.on("error",(e)=>{
@@ -397,4 +380,3 @@
   </script>
 </body>
 </html>
-
