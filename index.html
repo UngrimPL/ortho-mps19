@@ -18,7 +18,6 @@
     .small{color:#666;font-size:12px}
     .pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#f2f2f2;font-size:11px}
     .cursor{cursor:pointer}
-    .range{width:120px}
     .search-item{padding:6px 8px;border-bottom:1px solid #f3f3f3;cursor:pointer}
     .search-item:last-child{border-bottom:none}
     .search-item:hover{background:#f8f8f8}
@@ -34,29 +33,28 @@
     <!-- ORTO 1 -->
     <label class="row cursor">
       <input id="chk-orto1" type="checkbox" checked>
-      <span>Orto 09/2024 (PMTiles #1)</span>
+      <span>Ortofotomapa 09/2024 (#1)</span>
     </label>
 
-    <!-- ORTO 2 (nowa) -->
-    <div class="row" style="justify-content:space-between">
-      <label class="cursor" style="display:flex;gap:8px;align-items:center">
-        <input id="chk-orto2" type="checkbox">
-        <span>Orto (PMTiles #2)</span>
-      </label>
-      <div style="display:flex;align-items:center;gap:6px">
-        <span class="small" title="Przezroczystość drugiej orto">α</span>
-        <input id="op-orto2" class="range" type="range" min="0" max="100" value="65">
-      </div>
-    </div>
+    <!-- ORTO 2 -->
+    <label class="row cursor">
+      <input id="chk-orto2" type="checkbox">
+      <span>Ortofotomapa 09/2024 (#2)</span>
+    </label>
 
     <label class="row cursor">
-      <input id="chk-dzialki" type="checkbox" checked><span>Działki – linie/wypełnienie</span>
+      <input id="chk-dzialki" type="checkbox" checked>
+      <span>Działki – linie</span>
     </label>
+
     <label class="row cursor" title="Etykiety pokazują idDzialki">
-      <input id="chk-etykiety" type="checkbox" checked><span>Działki – numery (idDzialki)</span>
+      <input id="chk-etykiety" type="checkbox" checked>
+      <span>Działki – numery</span>
     </label>
+
     <label class="row cursor" title="Linie rozgraniczające z pliku lr.geojson">
-      <input id="chk-lr" type="checkbox" checked><span>Linie rozgraniczające</span>
+      <input id="chk-lr" type="checkbox" checked>
+      <span>Linia rozgraniczająca</span>
     </label>
 
     <!-- WYSZUKIWARKA po idDzialki -->
@@ -75,9 +73,9 @@
   </div>
 
   <script>
-    // ⬇️ ORTO #1 (masz już tę ścieżkę)
+    // ⬇️ ORTO #1
     const PMTILES_URL1   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19_2.pmtiles";
-    // ⬇️ ORTO #2 (DRUGI plik w Twoim koszyku R2) – podmień jeśli nazwa inna
+    // ⬇️ ORTO #2
     const PMTILES_URL2   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19pd_2.pmtiles";
 
     const GEOJSON_URL    = "./dzialki.geojson";
@@ -119,21 +117,19 @@
       // dopasuj do bounds ORTO 1 (jeśli dostępne)
       try { const h = await p1.getHeader(); if (h?.bounds) map.fitBounds([[h.bounds[0],h.bounds[1]],[h.bounds[2],h.bounds[3]]], { padding:20 }); } catch(e){}
 
-      // ===== ORTO 2 (DRUGA WARSTWA) =====
+      // ===== ORTO 2 =====
       map.addSource("ortho2", {
         type: "raster",
         url: `pmtiles://${PMTILES_URL2}`,
         tileSize: 256, minzoom: 0, maxzoom: 24
       });
-      // Uwaga: dodajemy ją NAD ortho1, domyślnie wyłączona (visibility none)
+      // Uwaga: dodajemy ją NAD ortho1, domyślnie wyłączona
       map.addLayer({
         id: "ortho2",
         type: "raster",
         source: "ortho2",
         paint: { "raster-opacity": 0.65 }
       });
-
-      // na start wyłącz warstwę 2 (możesz zmienić na widoczną)
       map.setLayoutProperty("ortho2", "visibility", "none");
 
       // ===== DZIAŁKI =====
@@ -246,10 +242,6 @@
       document.getElementById("chk-orto2").addEventListener("change", (ev)=>
         map.setLayoutProperty("ortho2","visibility", ev.target.checked?"visible":"none")
       );
-      document.getElementById("op-orto2").addEventListener("input", (ev)=>{
-        const v = Number(ev.target.value)/100;
-        map.setPaintProperty("ortho2","raster-opacity", v);
-      });
 
       document.getElementById("chk-dzialki").addEventListener("change", (ev)=>{
         const vis = ev.target.checked?"visible":"none";
@@ -272,5 +264,3 @@
   </script>
 </body>
 </html>
-
-
