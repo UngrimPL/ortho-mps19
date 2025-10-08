@@ -36,10 +36,16 @@
       <span>Ortofotomapa 09/2024 (#1)</span>
     </label>
 
-    <!-- ORTO 2 -->
+    <!-- ORTO 2 (domyślnie WŁĄCZONE) -->
     <label class="row cursor">
       <input id="chk-orto2" type="checkbox" checked>
       <span>Ortofotomapa 09/2024 (#2)</span>
+    </label>
+
+    <!-- ORTO 3 (domyślnie WŁĄCZONE) -->
+    <label class="row cursor">
+      <input id="chk-orto3" type="checkbox" checked>
+      <span>Ortofotomapa 09/2024 (#3)</span>
     </label>
 
     <label class="row cursor">
@@ -73,10 +79,10 @@
   </div>
 
   <script>
-    // ⬇️ ORTO #1
+    // ⬇️ ORTO pliki PMTiles
     const PMTILES_URL1   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19_2.pmtiles";
-    // ⬇️ ORTO #2
     const PMTILES_URL2   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19pd_2.pmtiles";
+    const PMTILES_URL3   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19bok.pmtiles"; // <— nowy (#3)
 
     const GEOJSON_URL    = "./dzialki.geojson";
     const LR_GEOJSON_URL = "./lr.geojson";
@@ -86,8 +92,10 @@
     maplibregl.addProtocol("pmtiles", protocol.tile);
     const p1 = new pmtiles.PMTiles(PMTILES_URL1);
     const p2 = new pmtiles.PMTiles(PMTILES_URL2);
+    const p3 = new pmtiles.PMTiles(PMTILES_URL3);
     protocol.add(p1);
     protocol.add(p2);
+    protocol.add(p3);
 
     // Mapa
     const map = new maplibregl.Map({
@@ -115,7 +123,10 @@
       map.addLayer({ id: "ortho1", type: "raster", source: "ortho1", paint: { "raster-opacity": 1 } });
 
       // dopasuj do bounds ORTO 1 (jeśli dostępne)
-      try { const h = await p1.getHeader(); if (h?.bounds) map.fitBounds([[h.bounds[0],h.bounds[1]],[h.bounds[2],h.bounds[3]]], { padding:20 }); } catch(e){}
+      try {
+        const h = await p1.getHeader();
+        if (h?.bounds) map.fitBounds([[h.bounds[0],h.bounds[1]],[h.bounds[2],h.bounds[3]]], { padding:20 });
+      } catch(e){}
 
       // ===== ORTO 2 =====
       map.addSource("ortho2", {
@@ -123,14 +134,27 @@
         url: `pmtiles://${PMTILES_URL2}`,
         tileSize: 256, minzoom: 0, maxzoom: 24
       });
-      // Uwaga: dodajemy ją NAD ortho1, domyślnie wyłączona
       map.addLayer({
         id: "ortho2",
         type: "raster",
         source: "ortho2",
-        paint: { "raster-opacity": 1 }
+        paint: { "raster-opacity": 1 } // pełna nieprzezroczystość
       });
-      map.setLayoutProperty("ortho2", "visibility", "visible");
+      // (nie ukrywamy — startuje widoczne)
+
+      // ===== ORTO 3 =====
+      map.addSource("ortho3", {
+        type: "raster",
+        url: `pmtiles://${PMTILES_URL3}`,
+        tileSize: 256, minzoom: 0, maxzoom: 24
+      });
+      map.addLayer({
+        id: "ortho3",
+        type: "raster",
+        source: "ortho3",
+        paint: { "raster-opacity": 1 } // pełna nieprzezroczystość
+      });
+      // (nie ukrywamy — startuje widoczne)
 
       // ===== DZIAŁKI =====
       map.addSource("dzialki", { type:"geojson", data:GEOJSON_URL, promoteId:"idDzialki" });
@@ -146,7 +170,7 @@
         id: "dzialki-fill",
         type: "fill",
         source: "dzialki",
-        paint: { "fill-color": "#007bff", "fill-opacity": 0.04 }
+        paint: { "fill-color": "#007bff", "fill-opacity": 0.10 }
       }, "dzialki-line");
 
       map.addLayer({
@@ -191,10 +215,15 @@
 
       map.addSource("hit", { type:"geojson", data:{ type:"FeatureCollection", features:[] } });
       map.addLayer({ id:"hit-fill", type:"fill", source:"hit", filter:["==",["geometry-type"],"Polygon"], paint:{ "fill-color":"#ffe680", "fill-opacity":0.35 } });
-      map.addLayer({ id:"hit-line", type:"line", source:"hit", paint:{ "line-color":"#ffd200", "line-width":3 } });
+      map.addLayer({ id:"hit-line", type:"line", source:"hit", paint:{ "line-color":"#ffd200", "line-width":3 } }); // żółty obrys
 
       let ID_INDEX = [];
-      function scanCoords(coords, acc){ if (typeof coords[0]==="number"){ const x=coords[0],y=coords[1]; if(x<acc[0])acc[0]=x; if(y<acc[1])acc[1]=y; if(x>acc[2])acc[2]=x; if(y>acc[3])acc[3]=y; } else coords.forEach(c=>scanCoords(c,acc)); }
+      function scanCoords(coords, acc){
+        if (typeof coords[0]==="number"){
+          const x=coords[0],y=coords[1];
+          if(x<acc[0])acc[0]=x; if(y<acc[1])acc[1]=y; if(x>acc[2])acc[2]=x; if(y>acc[3])acc[3]=y;
+        } else coords.forEach(c=>scanCoords(c,acc));
+      }
       function getBBox(geom){ const a=[Infinity,Infinity,-Infinity,-Infinity]; scanCoords(geom.coordinates,a); return a; }
 
       try{
@@ -230,10 +259,17 @@
         debounce=setTimeout(()=>{ const res = ID_INDEX.filter(r=>r.idNorm.includes(q)); renderList(res); }, 100);
       });
       $inp.addEventListener("keydown",(e)=>{
-        if(e.key==="Enter"){ const q=$inp.value.toLowerCase().trim(); const res=ID_INDEX.filter(r=>r.idNorm.includes(q)); if(res.length) selectItem(res[0]); }
-        else if(e.key==="Escape"){ $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); }
+        if(e.key==="Enter"){
+          const q=$inp.value.toLowerCase().trim();
+          const res=ID_INDEX.filter(r=>r.idNorm.includes(q));
+          if(res.length) selectItem(res[0]);
+        } else if(e.key==="Escape"){
+          $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
+        }
       });
-      $clr.addEventListener("click", ()=>{ $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); $inp.focus(); });
+      $clr.addEventListener("click", ()=>{
+        $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); $inp.focus();
+      });
 
       // ===== PRZEŁĄCZNIKI =====
       document.getElementById("chk-orto1").addEventListener("change", (ev)=>
@@ -241,6 +277,9 @@
       );
       document.getElementById("chk-orto2").addEventListener("change", (ev)=>
         map.setLayoutProperty("ortho2","visibility", ev.target.checked?"visible":"none")
+      );
+      document.getElementById("chk-orto3").addEventListener("change", (ev)=>
+        map.setLayoutProperty("ortho3","visibility", ev.target.checked?"visible":"none")
       );
 
       document.getElementById("chk-dzialki").addEventListener("change", (ev)=>{
@@ -264,5 +303,3 @@
   </script>
 </body>
 </html>
-
-
