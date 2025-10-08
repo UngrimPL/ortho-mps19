@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Orto s19 v4</title>
+  <title>Orto s19 v5 – 2×PMTiles</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -11,20 +11,18 @@
     html,body,#map{height:100%;margin:0;background:#ffffff}
     .panel{
       position:absolute;top:10px;left:10px;z-index:10;background:#fff;padding:10px 12px;
-      border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.15);font:13px system-ui;max-width:320px
+      border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.15);font:13px system-ui;max-width:340px
     }
     .row{display:flex;gap:8px;align-items:center;margin:4px 0}
     .panel h3{margin:0 0 6px 0;font-size:14px}
     .small{color:#666;font-size:12px}
     .pill{display:inline-block;padding:1px 6px;border-radius:999px;background:#f2f2f2;font-size:11px}
     .cursor{cursor:pointer}
-
-    /* wyszukiwarka */
+    .range{width:120px}
     .search-item{padding:6px 8px;border-bottom:1px solid #f3f3f3;cursor:pointer}
     .search-item:last-child{border-bottom:none}
     .search-item:hover{background:#f8f8f8}
     .search-id{font-weight:600;font-size:13px}
-    .search-empty{padding:8px;color:#888}
   </style>
 </head>
 <body>
@@ -32,14 +30,30 @@
 
   <div class="panel">
     <h3>Warstwy</h3>
+
+    <!-- ORTO 1 -->
     <label class="row cursor">
-      <input id="chk-orto" type="checkbox" checked><span>Orto 09/2024</span>
+      <input id="chk-orto1" type="checkbox" checked>
+      <span>Orto 09/2024 (PMTiles #1)</span>
     </label>
+
+    <!-- ORTO 2 (nowa) -->
+    <div class="row" style="justify-content:space-between">
+      <label class="cursor" style="display:flex;gap:8px;align-items:center">
+        <input id="chk-orto2" type="checkbox">
+        <span>Orto (PMTiles #2)</span>
+      </label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="small" title="Przezroczystość drugiej orto">α</span>
+        <input id="op-orto2" class="range" type="range" min="0" max="100" value="65">
+      </div>
+    </div>
+
     <label class="row cursor">
-      <input id="chk-dzialki" type="checkbox" checked><span>Działki – linie</span>
+      <input id="chk-dzialki" type="checkbox" checked><span>Działki – linie/wypełnienie</span>
     </label>
     <label class="row cursor" title="Etykiety pokazują idDzialki">
-      <input id="chk-etykiety" type="checkbox" checked><span>Działki – numery</span>
+      <input id="chk-etykiety" type="checkbox" checked><span>Działki – numery (idDzialki)</span>
     </label>
     <label class="row cursor" title="Linie rozgraniczające z pliku lr.geojson">
       <input id="chk-lr" type="checkbox" checked><span>Linie rozgraniczające</span>
@@ -61,15 +75,23 @@
   </div>
 
   <script>
-    const PMTILES_URL   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19_2.pmtiles";
-    const GEOJSON_URL   = "./dzialki.geojson";
-    const LR_GEOJSON_URL= "./lr.geojson";
+    // ⬇️ ORTO #1 (masz już tę ścieżkę)
+    const PMTILES_URL1   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19_2.pmtiles";
+    // ⬇️ ORTO #2 (DRUGI plik w Twoim koszyku R2) – podmień jeśli nazwa inna
+    const PMTILES_URL2   = "https://pub-ceaa84cce5f04dc9bc703ca491dfbe8a.r2.dev/ms19.pmtiles";
 
+    const GEOJSON_URL    = "./dzialki.geojson";
+    const LR_GEOJSON_URL = "./lr.geojson";
+
+    // PMTiles protocol
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
-    const p = new pmtiles.PMTiles(PMTILES_URL);
-    protocol.add(p);
+    const p1 = new pmtiles.PMTiles(PMTILES_URL1);
+    const p2 = new pmtiles.PMTiles(PMTILES_URL2);
+    protocol.add(p1);
+    protocol.add(p2);
 
+    // Mapa
     const map = new maplibregl.Map({
       container: "map",
       style: {
@@ -82,58 +104,55 @@
       zoom: 17,
       attributionControl: true
     });
-
     map.addControl(new maplibregl.NavigationControl(), "top-left");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
 
     map.on("load", async () => {
-      // ORTO
-      map.addSource("ortho", {
+      // ===== ORTO 1 =====
+      map.addSource("ortho1", {
         type: "raster",
-        url: `pmtiles://${PMTILES_URL}`,
-        tileSize: 256,
-        minzoom: 0, maxzoom: 24
+        url: `pmtiles://${PMTILES_URL1}`,
+        tileSize: 256, minzoom: 0, maxzoom: 24
       });
-      map.addLayer({ id: "ortho", type: "raster", source: "ortho" });
+      map.addLayer({ id: "ortho1", type: "raster", source: "ortho1", paint: { "raster-opacity": 1 } });
 
-      try {
-        const header = await p.getHeader();
-        if (header?.bounds) {
-          const [w,s,e,n] = header.bounds;
-          map.fitBounds([[w,s],[e,n]], { padding: 20 });
-        }
-      } catch (e) {}
+      // dopasuj do bounds ORTO 1 (jeśli dostępne)
+      try { const h = await p1.getHeader(); if (h?.bounds) map.fitBounds([[h.bounds[0],h.bounds[1]],[h.bounds[2],h.bounds[3]]], { padding:20 }); } catch(e){}
 
-      // DZIAŁKI
-      map.addSource("dzialki", {
-        type: "geojson",
-        data: GEOJSON_URL,
-        promoteId: "idDzialki"
+      // ===== ORTO 2 (DRUGA WARSTWA) =====
+      map.addSource("ortho2", {
+        type: "raster",
+        url: `pmtiles://${PMTILES_URL2}`,
+        tileSize: 256, minzoom: 0, maxzoom: 24
+      });
+      // Uwaga: dodajemy ją NAD ortho1, domyślnie wyłączona (visibility none)
+      map.addLayer({
+        id: "ortho2",
+        type: "raster",
+        source: "ortho2",
+        paint: { "raster-opacity": 0.65 }
       });
 
-      // obrysy
+      // na start wyłącz warstwę 2 (możesz zmienić na widoczną)
+      map.setLayoutProperty("ortho2", "visibility", "none");
+
+      // ===== DZIAŁKI =====
+      map.addSource("dzialki", { type:"geojson", data:GEOJSON_URL, promoteId:"idDzialki" });
+
       map.addLayer({
         id: "dzialki-line",
         type: "line",
         source: "dzialki",
-        paint: {
-          "line-color": "#007bff",
-          "line-width": 1.4
-        }
+        paint: { "line-color": "#007bff", "line-width": 1.4 }
       });
 
-      // wypełnienie
       map.addLayer({
         id: "dzialki-fill",
         type: "fill",
         source: "dzialki",
-        paint: {
-          "fill-color": "#007bff",
-          "fill-opacity": 0.1
-        }
+        paint: { "fill-color": "#007bff", "fill-opacity": 0.10 }
       }, "dzialki-line");
 
-      // etykiety = idDzialki
       map.addLayer({
         id: "dzialki-label",
         type: "symbol",
@@ -141,193 +160,115 @@
         minzoom: 17,
         layout: {
           "text-field": ["coalesce", ["get", "idDzialki"], ""],
-          "text-size": 11,
-          "text-allow-overlap": false,
-          "symbol-placement": "point",
-          "text-justify": "center",
-          "text-anchor": "center"
+          "text-size": 11, "text-allow-overlap": false,
+          "symbol-placement": "point", "text-justify":"center", "text-anchor":"center"
         },
-        paint: {
-          "text-color": "#000",
-          "text-halo-color": "#fff",
-          "text-halo-width": 1.4
-        }
+        paint: { "text-color": "#000", "text-halo-color": "#fff", "text-halo-width": 1.4 }
       });
 
-      // ====== LINIE ROZGRANICZAJĄCE (na wierzchu) ======
-      map.addSource("lr", {
-        type: "geojson",
-        data: LR_GEOJSON_URL
-      });
-      map.addLayer({
-        id: "lr-line",
-        type: "line",
-        source: "lr",
-        paint: {
-          "line-color": "#ff0000",
-          "line-width": 2.5
-        }
-      });
+      // ===== LR =====
+      map.addSource("lr", { type:"geojson", data:LR_GEOJSON_URL });
+      map.addLayer({ id: "lr-line", type:"line", source:"lr", paint:{ "line-color":"#ff0000", "line-width":2.5 } });
 
-      // POPUP działki
+      // ===== POPUP DZIAŁKI =====
       const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
       map.on("click", "dzialki-fill", (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
+        const f = e.features?.[0]; if (!f) return;
         const pr = f.properties || {};
         const id = pr.idDzialki || "-";
         const nr = pr.NR_DZ || pr.NRDZ || "-";
-        popup
-          .setLngLat(e.lngLat)
-          .setHTML(`<div style="font:13px system-ui">
+        popup.setLngLat(e.lngLat).setHTML(
+          `<div style="font:13px system-ui">
             <div><b>Nr po podziale:</b> ${id}</div>
             <div><b>Nr przed podziałem:</b> ${nr}</div>
-          </div>`)
-          .addTo(map);
+          </div>`
+        ).addTo(map);
       });
       map.on("mouseenter", "dzialki-fill", () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", "dzialki-fill", () => map.getCanvas().style.cursor = "");
 
-      // ====== WYSZUKIWARKA: tylko po idDzialki ======
+      // ===== WYSZUKIWARKA =====
       const $inp = document.getElementById("search-id");
       const $clr = document.getElementById("search-clear");
       const $lst = document.getElementById("search-list");
       const MAX_SUGGESTIONS = 30;
 
-      // warstwa highlight (dodana NA WIERZCHU)
       map.addSource("hit", { type:"geojson", data:{ type:"FeatureCollection", features:[] } });
-      map.addLayer({
-        id:"hit-fill", type:"fill", source:"hit",
-        filter:["==",["geometry-type"],"Polygon"],
-        paint:{ "fill-color":"#ffe680", "fill-opacity":0.35 }
-      });
-      map.addLayer({
-        id:"hit-line", type:"line", source:"hit",
-        paint:{ "line-color":"#000000", "line-width":3 }
-      });
+      map.addLayer({ id:"hit-fill", type:"fill", source:"hit", filter:["==",["geometry-type"],"Polygon"], paint:{ "fill-color":"#ffe680", "fill-opacity":0.35 } });
+      map.addLayer({ id:"hit-line", type:"line", source:"hit", paint:{ "line-color":"#000000", "line-width":3 } });
 
-      // indeks: { id, feature, bbox }
       let ID_INDEX = [];
-      function scanCoords(coords, acc){
-        if (typeof coords[0] === "number"){
-          const x=coords[0], y=coords[1];
-          if (x<acc[0]) acc[0]=x; if (y<acc[1]) acc[1]=y;
-          if (x>acc[2]) acc[2]=x; if (y>acc[3]) acc[3]=y;
-        } else coords.forEach(c => scanCoords(c, acc));
-      }
-      function getBBox(geom){
-        const acc=[Infinity,Infinity,-Infinity,-Infinity];
-        scanCoords(geom.coordinates, acc);
-        return acc;
-      }
+      function scanCoords(coords, acc){ if (typeof coords[0]==="number"){ const x=coords[0],y=coords[1]; if(x<acc[0])acc[0]=x; if(y<acc[1])acc[1]=y; if(x>acc[2])acc[2]=x; if(y>acc[3])acc[3]=y; } else coords.forEach(c=>scanCoords(c,acc)); }
+      function getBBox(geom){ const a=[Infinity,Infinity,-Infinity,-Infinity]; scanCoords(geom.coordinates,a); return a; }
 
       try{
         const gj = await (await fetch(GEOJSON_URL, {cache:"no-store"})).json();
-        const feats = gj && gj.type==="FeatureCollection" ? gj.features : [];
-        ID_INDEX = feats
-          .filter(f => f && f.properties && f.properties.idDzialki != null)
-          .map(f => {
-            const id = String(f.properties.idDzialki);
-            return { id, idNorm: id.toLowerCase(), feature: f, bbox: getBBox(f.geometry) };
-          });
-      }catch(err){
-        console.warn("Nie udało się zbudować indeksu wyszukiwania:", err);
-      }
+        const feats = gj?.type==="FeatureCollection" ? gj.features : [];
+        ID_INDEX = feats.filter(f=>f?.properties?.idDzialki!=null).map(f=>{
+          const id = String(f.properties.idDzialki);
+          return { id, idNorm:id.toLowerCase(), feature:f, bbox:getBBox(f.geometry) };
+        });
+      }catch(err){ console.warn("Nie udało się zbudować indeksu wyszukiwania:", err); }
 
       function renderList(items){
-        if (!items.length){
-          $lst.style.display = "none";
-          $lst.innerHTML = "";
-          return;
-        }
-        $lst.style.display = "block";
-        $lst.innerHTML = items.slice(0, MAX_SUGGESTIONS).map((it, idx) => `
-          <div class="search-item" data-idx="${idx}">
-            <div class="search-id">${it.id}</div>
-          </div>
+        if (!items.length){ $lst.style.display="none"; $lst.innerHTML=""; return; }
+        $lst.style.display="block";
+        $lst.innerHTML = items.slice(0,MAX_SUGGESTIONS).map((it,i)=>`
+          <div class="search-item" data-idx="${i}"><div class="search-id">${it.id}</div></div>
         `).join("");
-        Array.from($lst.querySelectorAll(".search-item")).forEach((el, i) => {
-          el.addEventListener("click", () => selectItem(items[i]));
-        });
+        Array.from($lst.querySelectorAll(".search-item")).forEach((el,i)=>el.addEventListener("click",()=>selectItem(items[i])));
       }
-
       function selectItem(item){
-        // highlight
-        map.getSource("hit").setData({
-          type:"FeatureCollection",
-          features:[ item.feature ]
-        });
-        // dopasuj widok
+        map.getSource("hit").setData({ type:"FeatureCollection", features:[item.feature] });
         const [minX,minY,maxX,maxY] = item.bbox;
-        if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)){
-          map.fitBounds([[minX,minY],[maxX,maxY]], { padding: 30, maxZoom: 21 });
+        if (isFinite(minX)&&isFinite(minY)&&isFinite(maxX)&&isFinite(maxY)){
+          map.fitBounds([[minX,minY],[maxX,maxY]], { padding:30, maxZoom:21 });
         }
-        // schowaj listę
-        $lst.style.display = "none";
+        $lst.style.display="none";
       }
-
-      // obsługa wpisywania
-      let debounce = null;
-      $inp.addEventListener("input", () => {
+      let debounce=null;
+      $inp.addEventListener("input", ()=>{
         clearTimeout(debounce);
-        const q = $inp.value.toLowerCase().trim();
-        if (!q){ renderList([]); return; }
-        debounce = setTimeout(() => {
-          const res = ID_INDEX.filter(r => r.idNorm.includes(q));
-          renderList(res);
-        }, 100);
+        const q=$inp.value.toLowerCase().trim();
+        if(!q){ renderList([]); return; }
+        debounce=setTimeout(()=>{ const res = ID_INDEX.filter(r=>r.idNorm.includes(q)); renderList(res); }, 100);
       });
-
-      // enter = wybierz pierwszy z listy
-      $inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter"){
-          const q = $inp.value.toLowerCase().trim();
-          const res = ID_INDEX.filter(r => r.idNorm.includes(q));
-          if (res.length) selectItem(res[0]);
-        } else if (e.key === "Escape"){
-          $inp.value = "";
-          renderList([]);
-          map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
-        }
+      $inp.addEventListener("keydown",(e)=>{
+        if(e.key==="Enter"){ const q=$inp.value.toLowerCase().trim(); const res=ID_INDEX.filter(r=>r.idNorm.includes(q)); if(res.length) selectItem(res[0]); }
+        else if(e.key==="Escape"){ $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); }
       });
+      $clr.addEventListener("click", ()=>{ $inp.value=""; renderList([]); map.getSource("hit").setData({ type:"FeatureCollection", features:[] }); $inp.focus(); });
 
-      // przycisk "x"
-      $clr.addEventListener("click", ()=>{
-        $inp.value = "";
-        renderList([]);
-        map.getSource("hit").setData({ type:"FeatureCollection", features:[] });
-        $inp.focus();
-      });
-
-      // ====== checkboxy ======
-      document.getElementById("chk-orto").addEventListener("change", (ev) =>
-        map.setLayoutProperty("ortho", "visibility", ev.target.checked ? "visible" : "none")
+      // ===== PRZEŁĄCZNIKI =====
+      document.getElementById("chk-orto1").addEventListener("change", (ev)=>
+        map.setLayoutProperty("ortho1","visibility", ev.target.checked?"visible":"none")
       );
-      document.getElementById("chk-dzialki").addEventListener("change", (ev) => {
-        const vis = ev.target.checked ? "visible" : "none";
-        ["dzialki-fill","dzialki-line"].forEach(id=>{
-          if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
-        });
+      document.getElementById("chk-orto2").addEventListener("change", (ev)=>
+        map.setLayoutProperty("ortho2","visibility", ev.target.checked?"visible":"none")
+      );
+      document.getElementById("op-orto2").addEventListener("input", (ev)=>{
+        const v = Number(ev.target.value)/100;
+        map.setPaintProperty("ortho2","raster-opacity", v);
       });
-      document.getElementById("chk-etykiety").addEventListener("change", (ev) => {
-        if (map.getLayer("dzialki-label"))
-          map.setLayoutProperty("dzialki-label", "visibility", ev.target.checked ? "visible" : "none");
+
+      document.getElementById("chk-dzialki").addEventListener("change", (ev)=>{
+        const vis = ev.target.checked?"visible":"none";
+        ["dzialki-fill","dzialki-line"].forEach(id=>{ if(map.getLayer(id)) map.setLayoutProperty(id,"visibility",vis); });
       });
-      document.getElementById("chk-lr").addEventListener("change", (ev) => {
-        if (map.getLayer("lr-line"))
-          map.setLayoutProperty("lr-line", "visibility", ev.target.checked ? "visible" : "none");
+      document.getElementById("chk-etykiety").addEventListener("change", (ev)=>{
+        if(map.getLayer("dzialki-label")) map.setLayoutProperty("dzialki-label","visibility", ev.target.checked?"visible":"none");
+      });
+      document.getElementById("chk-lr").addEventListener("change", (ev)=>{
+        if(map.getLayer("lr-line")) map.setLayoutProperty("lr-line","visibility", ev.target.checked?"visible":"none");
       });
     });
 
-    map.on("error", (e) => {
-      if (e && e.error && /geojson/i.test(String(e.error))) {
+    map.on("error",(e)=>{
+      if(e && e.error && /geojson/i.test(String(e.error))){
         console.error("Błąd ładowania GeoJSON:", e.error);
-        alert("Nie udało się wczytać pliku GeoJSON — sprawdź ścieżkę i poprawność JSON.");
+        alert("Nie udało się wczytać pliku GeoJSON — sprawdź ścieżki i poprawność JSON.");
       }
     });
   </script>
 </body>
 </html>
-
-
-
